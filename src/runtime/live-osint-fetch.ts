@@ -8,6 +8,9 @@ import {
   selectAllowlistedSourceUrls
 } from "../connectors/osint/allowlist.ts";
 import { normalizeOsintResponseToKnowledgeUnits, redactOsintPayload } from "../connectors/osint/normalizer.ts";
+import { loadOsintSearchSources } from "../connectors/osint/search-sources.ts";
+import { runNaturalLanguageOsintSearch } from "../connectors/osint/search.ts";
+import type { OsintSearchSourceRegistry } from "../connectors/osint/search-types.ts";
 import type {
   OsintAllowlist,
   OsintBlockedReason,
@@ -23,8 +26,10 @@ export type ApprovedLiveOsintFetchInput = {
   runId: string;
   config: OsintConnectorConfig;
   allowlist?: OsintAllowlist;
+  searchSources?: OsintSearchSourceRegistry;
   allowedSources?: string[];
   sourceUrls?: string[];
+  preferredDomains?: string[];
   fetchImpl?: OsintFetchLike;
   now?: string;
 };
@@ -34,6 +39,25 @@ export async function runApprovedLiveOsintFetch(input: ApprovedLiveOsintFetchInp
   if (approvalBlock) return blocked(approvalBlock.reason, approvalBlock.warning);
   if (!input.config.liveOptIn) {
     return blocked("live_opt_in_required", "Live OSINT is disabled. Set WARDEN_OSINT_LIVE_OPT_IN=true to opt in.");
+  }
+
+  if (shouldUseNaturalLanguageSearch(input)) {
+    const searchResult = await runLiveSearch(input);
+    return {
+      status: searchResult.status,
+      blockedReason: searchResult.blockedReason as OsintBlockedReason | undefined,
+      units: searchResult.units,
+      artifacts: searchResult.artifacts,
+      sourceVetRequired: true,
+      promoteToAch: false,
+      warnings:
+        searchResult.status === "succeeded"
+          ? [
+              ...searchResult.warnings,
+              "Live OSINT search result is unvetted and must pass SourceVet before ACH promotion."
+            ]
+          : searchResult.warnings
+    };
   }
 
   const allowlistResult = loadAllowlist(input);
@@ -94,6 +118,37 @@ export async function runApprovedLiveOsintFetch(input: ApprovedLiveOsintFetchInp
     promoteToAch: false,
     warnings
   };
+}
+
+function shouldUseNaturalLanguageSearch(input: ApprovedLiveOsintFetchInput): boolean {
+  return input.config.searchEnabled && !input.sourceUrls?.length && !input.allowedSources?.length;
+}
+
+async function runLiveSearch(input: ApprovedLiveOsintFetchInput) {
+  try {
+    return await runNaturalLanguageOsintSearch(
+      {
+        query: input.query,
+        runId: input.runId,
+        approvalId: input.approval!.id,
+        sourceIds: input.allowedSources,
+        preferredDomains: input.preferredDomains,
+        maxResults: input.config.maxResults,
+        timeoutMs: input.config.timeoutMs,
+        userAgent: input.config.userAgent
+      },
+      input.searchSources ?? loadOsintSearchSources(input.config.searchSourcesPath),
+      { fetchImpl: input.fetchImpl, now: input.now }
+    );
+  } catch (error) {
+    return {
+      status: "blocked" as const,
+      blockedReason: "config_invalid",
+      units: [],
+      artifacts: [],
+      warnings: [`Live OSINT search could not run: ${(error as Error).message}`]
+    };
+  }
 }
 
 function validateApprovalGuard(

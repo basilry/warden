@@ -18,19 +18,14 @@ const deterministicFetch: OsintFetchLike = async () => {
     ok: true,
     status: 200,
     json: async () => ({
-      documents: [
+      articles: [
         {
           title: "Korea live OSINT resume sample",
-          url: "https://osint.example.test/warden/supply-chain/live-resume-a",
-          publishedAt: "2026-06-15T00:00:00.000Z",
-          reliability: "B2",
-          claims: [
-            {
-              text: "동북아 공급망 리스크는 수출통제와 해상 물류 병목을 함께 보는 live OSINT watchpoint로 관리해야 한다.",
-              confidence: 0.72
-            }
-          ],
-          tags: ["korea", "northeast-asia", "resume"]
+          url: "https://example.com/live-osint/korea-supply-chain",
+          seendate: "20260615000000",
+          domain: "example.com",
+          sourceCountry: "South Korea",
+          language: "Korean"
         }
       ]
     })
@@ -65,7 +60,7 @@ const resumed = await approveRuntimeApproval(
   { config, osintFetchImpl: deterministicFetch }
 );
 
-assertEqual(fetchCalls, 1, "live fetch call count");
+assertAtLeast(fetchCalls, 1, "live fetch call count");
 assertEqual(resumed.status, "succeeded", "resumed status");
 assertEqual(resumed.outputs.resumeResult?.fetchMode, "live-osint", "resume fetch mode");
 assertAtLeast(resumed.outputs.resumeResult?.fetchedUnits.length ?? 0, 1, "live fetched units");

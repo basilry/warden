@@ -26,6 +26,7 @@ const approved = approvalQueue.approve(pending.id, "operator", "P13 regression a
 const config = loadWardenConfig({
   WARDEN_MODEL_PROVIDER: "mock",
   WARDEN_OSINT_LIVE_OPT_IN: "true",
+  WARDEN_OSINT_SEARCH_ENABLED: "false",
   WARDEN_OSINT_TIMEOUT_MS: "20",
   WARDEN_OSINT_MAX_RESULTS: "2"
 }).osint;

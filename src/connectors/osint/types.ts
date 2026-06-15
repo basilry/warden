@@ -20,6 +20,8 @@ export type OsintAllowlist = {
 export type OsintConnectorConfig = {
   liveOptIn: boolean;
   allowlistPath: string;
+  searchEnabled: boolean;
+  searchSourcesPath: string;
   timeoutMs: number;
   maxResults: number;
   userAgent: string;
@@ -50,7 +52,8 @@ export type OsintBlockedReason =
   | "timeout"
   | "http_error"
   | "malformed_response"
-  | "config_invalid";
+  | "config_invalid"
+  | "no_results";
 
 export type OsintFetchResult = {
   status: "succeeded" | "blocked";

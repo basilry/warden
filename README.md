@@ -127,7 +127,7 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
   -d '{"actor":"operator","reason":"approved"}'
 ```
 
-기본 경로는 offline-first입니다. live LLM, live MCP, 외부 네트워크 없이 mock model proposal, policy gate, WARDEN internal MCP-style tool, approval queue, 승인 후 deterministic fetch fixture까지 검증합니다. 정적 HTML report는 기본 실행 경로가 아니라 `npm run demo:warden:report`로 생성하는 선택 산출물입니다.
+기본 경로는 offline-first입니다. live LLM, live MCP, 외부 네트워크 없이 mock model proposal, policy gate, WARDEN internal MCP-style tool, approval queue, 승인 후 deterministic fetch fixture까지 검증합니다. `WARDEN_OSINT_LIVE_OPT_IN=true`를 명시하면 승인 후 live OSINT 검색 provider를 사용할 수 있습니다. 정적 HTML report는 기본 실행 경로가 아니라 `npm run demo:warden:report`로 생성하는 선택 산출물입니다.
 
 ## Main Commands
 
@@ -158,6 +158,12 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
 | `npm run demo:warden:codex` | Codex CLI model adapter dry-run demo |
 | `npm run demo:warden:regression` | WARDEN regression suite |
 | `npm run demo:warden:p5-regression` | live/security/MCP/ingestion guardrail regression |
+| `npm run demo:warden:ach-mcp` | ACH MCP extraction regression |
+| `npm run demo:warden:runtime-persistence` | durable runtime state regression |
+| `npm run demo:warden:live-osint-guard` | live OSINT approval/allowlist guard regression |
+| `npm run demo:warden:sourcevet-ach-resume` | approval 후 SourceVet + ACH resume regression |
+| `npm run demo:warden:live-osint-resume` | live OSINT search provider + ACH resume regression |
+| `npm run demo:warden:osint-search-mcp` | natural-language OSINT search MCP regression |
 | `npm test` | build + regression 전체 검증 |
 
 ## CLI
@@ -201,7 +207,8 @@ warden server
 - 1회차에는 승인된 proposal 또는 deterministic fallback으로 `run_warden_team` capability를 MCP router/policy gate를 통해 실행합니다.
 - 내부 WARDEN specialist team이 ACH, SourceVet, verifier trace를 생성합니다.
 - 2회차 이후 외부 OSINT 성격의 `external_osint_fetch`는 자동 실행하지 않고 approval pending으로 남깁니다.
-- 승인 후 재개는 현재 실제 네트워크가 아니라 deterministic local fetch fixture를 반영합니다. 실제 웹 OSINT connector는 별도 allowlist와 SourceVet 재평가가 필요합니다.
+- 승인 후 재개는 기본적으로 deterministic local fetch fixture를 반영합니다.
+- `WARDEN_OSINT_LIVE_OPT_IN=true`이면 승인 후 자연어 objective를 OSINT 검색 provider로 전달하고, 결과를 SourceVet 검토 후 ACH 재평가에 투입합니다.
 - 모델 출력은 실행 권한이 아니라 proposal로만 저장됩니다.
 
 런타임 smoke test:
@@ -212,6 +219,56 @@ npm run demo:warden:runtime
 ```
 
 자세한 사용 방식은 `docs/runtime.md`를 참고하세요.
+
+## Live OSINT Search
+
+외부 검색은 기본 비활성입니다. 실제 인터넷 검색을 쓰려면 operator가 명시적으로 opt-in해야 하고, run 안에서 `external_osint_fetch` approval도 승인해야 합니다.
+
+```bash
+WARDEN_OSINT_LIVE_OPT_IN=true warden
+```
+
+기본 검색 소스 파일:
+
+```text
+fixtures/osint/search-sources.json
+```
+
+포함된 provider:
+
+- GDELT DOC article search: 공개 뉴스 검색, API key 불필요
+- Brave Web Search: `BRAVE_SEARCH_API_KEY`가 있을 때 사용
+- Brave Investing.com scoped search: `site:investing.com` 기반 시장/공급망 뉴스 검색
+- Yonhap RSS: 한국어 국제 뉴스 보강
+
+주요 환경 변수:
+
+```bash
+WARDEN_OSINT_LIVE_OPT_IN=true
+WARDEN_OSINT_SEARCH_ENABLED=true
+WARDEN_OSINT_SEARCH_SOURCES=fixtures/osint/search-sources.json
+WARDEN_OSINT_MAX_RESULTS=5
+WARDEN_OSINT_TIMEOUT_MS=8000
+BRAVE_SEARCH_API_KEY=...
+```
+
+검색 결과는 바로 ACH에 들어가지 않습니다.
+
+```text
+사용자 자연어 objective
+-> external_osint_fetch approval
+-> OSINT search MCP/connector
+-> KnowledgeUnit normalization
+-> SourceVet 검토
+-> 통과 evidence만 ACH 재평가
+-> 답변에 survivor delta와 source 한계 표시
+```
+
+기존 allowlist JSON endpoint 방식만 검증하려면 search를 끕니다.
+
+```bash
+WARDEN_OSINT_LIVE_OPT_IN=true WARDEN_OSINT_SEARCH_ENABLED=false npm run demo:warden:live-osint-guard
+```
 
 ## Recommended Demo Flow
 

@@ -75,6 +75,8 @@ export function loadWardenConfig(
     osint: {
       liveOptIn: parseBoolean(sourceEnv.WARDEN_OSINT_LIVE_OPT_IN, false),
       allowlistPath: resolve(cwd, sourceEnv.WARDEN_OSINT_ALLOWLIST ?? "fixtures/osint/allowlist.json"),
+      searchEnabled: parseBoolean(sourceEnv.WARDEN_OSINT_SEARCH_ENABLED, true),
+      searchSourcesPath: resolve(cwd, sourceEnv.WARDEN_OSINT_SEARCH_SOURCES ?? "fixtures/osint/search-sources.json"),
       timeoutMs: parsePositiveInteger(sourceEnv.WARDEN_OSINT_TIMEOUT_MS, 8000),
       maxResults: parseBoundedPositiveInteger(sourceEnv.WARDEN_OSINT_MAX_RESULTS, 5, 1, 25),
       userAgent: sourceEnv.WARDEN_OSINT_USER_AGENT ?? "WARDEN-Agent/0.1 live-osint-guard"

@@ -90,7 +90,7 @@ function buildKnowledgeUnit(
       contentHash,
       parserVersion: "warden-live-osint-normalizer/v1"
     },
-    reliability: parseOptionalString(document.reliability) ?? "live-osint:unvetted",
+    reliability: parseOptionalString(document.reliability) ?? "C3",
     tags: uniqueNonEmpty([
       "live-osint",
       "sourcevet-required",

@@ -1,0 +1,61 @@
+{
+  "version": "v1",
+  "sources": [
+    {
+      "id": "gdelt-doc-global",
+      "name": "GDELT DOC Article Search",
+      "kind": "gdelt-doc",
+      "endpoint": "https://api.gdeltproject.org/api/v2/doc/doc",
+      "enabled": true,
+      "allowedDomains": ["api.gdeltproject.org"],
+      "allowedPaths": ["/api/v2/doc/"],
+      "querySuffix": "(military OR defense OR defence OR security OR sanction OR supply chain OR missile OR navy OR army OR drone OR semiconductor OR shipping)",
+      "tags": ["gdelt", "news", "defense", "public-search"]
+    },
+    {
+      "id": "brave-web-news",
+      "name": "Brave Web Search",
+      "kind": "brave-web",
+      "endpoint": "https://api.search.brave.com/res/v1/web/search",
+      "enabled": true,
+      "allowedDomains": ["api.search.brave.com"],
+      "allowedPaths": ["/res/v1/web/search"],
+      "apiKeyEnv": "BRAVE_SEARCH_API_KEY",
+      "defaultFreshness": "pw",
+      "tags": ["brave", "web-search", "news"]
+    },
+    {
+      "id": "brave-investing-domain",
+      "name": "Brave Web Search scoped to Investing.com",
+      "kind": "brave-web",
+      "endpoint": "https://api.search.brave.com/res/v1/web/search",
+      "enabled": true,
+      "allowedDomains": ["api.search.brave.com"],
+      "allowedPaths": ["/res/v1/web/search"],
+      "apiKeyEnv": "BRAVE_SEARCH_API_KEY",
+      "queryPrefix": "site:investing.com",
+      "defaultFreshness": "pw",
+      "tags": ["brave", "investing.com", "market-news", "supply-chain"]
+    },
+    {
+      "id": "yonhap-international-rss",
+      "name": "Yonhap International RSS",
+      "kind": "rss",
+      "endpoint": "https://www.yna.co.kr/rss/international.xml",
+      "enabled": true,
+      "allowedDomains": ["www.yna.co.kr"],
+      "allowedPaths": ["/rss/"],
+      "tags": ["rss", "korea", "international", "news"]
+    },
+    {
+      "id": "nhk-world-rss",
+      "name": "NHK World News RSS",
+      "kind": "rss",
+      "endpoint": "https://www3.nhk.or.jp/nhkworld/en/news/list.xml",
+      "enabled": false,
+      "allowedDomains": ["www3.nhk.or.jp"],
+      "allowedPaths": ["/nhkworld/en/news/"],
+      "tags": ["rss", "japan", "northeast-asia", "news"]
+    }
+  ]
+}

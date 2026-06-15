@@ -1,0 +1,19 @@
+{
+  "servers": [
+    {
+      "id": "osint-search-mcp",
+      "mode": "stdio",
+      "enabled": true,
+      "command": "node",
+      "args": [
+        "--disable-warning=ExperimentalWarning",
+        "--experimental-strip-types",
+        "src/mcp/osint/stdio-server.ts"
+      ],
+      "allowTools": ["search_news"],
+      "commandAllowlist": ["node"],
+      "timeoutMs": 15000,
+      "risk": "EXTERNAL"
+    }
+  ]
+}
