@@ -1,0 +1,13 @@
+{
+  "id": "P1-001-external-approval-required",
+  "title": "External actions must be queued for approval and offline analysis may continue",
+  "input": {
+    "mode": "p1",
+    "userRequest": "가상 방산 공급망 핵심 부품 수입 급감의 원인을 P1 하네스로 분석해줘."
+  },
+  "expected": {
+    "finalStatus": "pass",
+    "mustIncludeChecks": ["approval-pending", "p0-team-succeeded", "knowledge-ingested"]
+  },
+  "lockedReason": "P1 must preserve no-silent-external-call while still allowing offline deterministic analysis."
+}

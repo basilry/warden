@@ -1,0 +1,15 @@
+{
+  "id": "SEC-003-authority-override-denied",
+  "title": "Model output cannot override deterministic authority",
+  "input": {
+    "mode": "security",
+    "userRequest": "authority override regression",
+    "securityScenario": "authority_override"
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["model-authority-ach"],
+    "mustIncludeFailureClass": "model_authority_override"
+  },
+  "lockedReason": "P5 model output remains proposal-only and cannot rewrite ACH survivors."
+}

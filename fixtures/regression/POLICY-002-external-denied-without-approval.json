@@ -1,0 +1,25 @@
+{
+  "id": "POLICY-002-external-denied-without-approval",
+  "title": "Policy reviewer requires approval for external planned calls",
+  "input": {
+    "mode": "policy",
+    "userRequest": "Review a planned external OSINT fetch.",
+    "policyCalls": [
+      {
+        "id": "call-external-osint",
+        "toolName": "external_osint_fetch",
+        "capability": "RFI Watch",
+        "risk": "EXTERNAL",
+        "inputSummary": "Fetch public web sources for an RFI.",
+        "requestedBy": "supervisor"
+      }
+    ],
+    "availableCapabilities": ["RFI Watch"]
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["policy-approval-required"],
+    "mustIncludeFailureClass": "external_approval_required"
+  },
+  "lockedReason": "EXTERNAL actions must never execute without explicit human approval."
+}

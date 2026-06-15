@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WARDEN CLI Design Concepts</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #10141a;
+        --panel: #1e232b;
+        --panel-2: #262c36;
+        --panel-3: #151a21;
+        --line: #3a4350;
+        --line-strong: #d9902f;
+        --text: #e9edf2;
+        --muted: #a5afbc;
+        --dim: #788391;
+        --cyan: #7fc9ec;
+        --blue: #8ab4ff;
+        --green: #a7d982;
+        --mint: #8fe4c2;
+        --amber: #f0b35a;
+        --orange: #ff8c5f;
+        --red: #ff6f7b;
+        --purple: #c69cff;
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+        --mono: "SFMono-Regular", "Cascadia Mono", "Roboto Mono", "JetBrains Mono",
+          Consolas, monospace;
+        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(127, 201, 236, 0.12), transparent 34rem),
+          radial-gradient(circle at 90% 8%, rgba(240, 179, 90, 0.1), transparent 28rem),
+          linear-gradient(180deg, #11161d 0%, #0e1217 100%);
+        color: var(--text);
+        font-family: var(--sans);
+      }
+
+      .page {
+        width: min(1480px, calc(100vw - 48px));
+        margin: 0 auto;
+        padding: 40px 0 64px;
+      }
+
+      .intro {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 32px;
+        align-items: end;
+        margin-bottom: 28px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(32px, 4vw, 56px);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .intro p {
+        max-width: 760px;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      .tagline {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        padding: 8px 11px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+      }
+
+      .concept {
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        background: rgba(24, 29, 37, 0.86);
+        box-shadow: var(--shadow);
+      }
+
+      .concept-head {
+        display: flex;
+        min-height: 96px;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 22px 24px 18px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0));
+      }
+
+      .concept-kicker {
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .concept-title {
+        margin-top: 7px;
+        font-size: 20px;
+        line-height: 1.25;
+      }
+
+      .concept-desc {
+        max-width: 340px;
+        align-self: end;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .terminal {
+        margin: 22px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        font-family: var(--mono);
+      }
+
+      .terminal-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      .dots {
+        display: inline-flex;
+        gap: 6px;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--line);
+      }
+
+      .dot.red {
+        background: #ff6b6b;
+      }
+
+      .dot.yellow {
+        background: #f8c14a;
+      }
+
+      .dot.green {
+        background: #59d98d;
+      }
+
+      .kbd {
+        color: var(--muted);
+      }
+
+      .prompt {
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .dim {
+        color: var(--dim);
+      }
+
+      .cyan {
+        color: var(--cyan);
+      }
+
+      .blue {
+        color: var(--blue);
+      }
+
+      .green {
+        color: var(--green);
+      }
+
+      .mint {
+        color: var(--mint);
+      }
+
+      .amber {
+        color: var(--amber);
+      }
+
+      .orange {
+        color: var(--orange);
+      }
+
+      .red {
+        color: var(--red);
+      }
+
+      .purple {
+        color: var(--purple);
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre;
+      }
+
+      .cursor {
+        display: inline-block;
+        width: 8px;
+        height: 16px;
+        transform: translateY(3px);
+        background: var(--green);
+      }
+
+      /* Concept A */
+      .terminal-a {
+        border-color: rgba(217, 144, 47, 0.92);
+        background: #252a32;
+      }
+
+      .terminal-a .hero-panel {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+        min-height: 260px;
+      }
+
+      .terminal-a .title-tab {
+        position: absolute;
+        top: -10px;
+        left: 24px;
+        padding: 0 9px;
+        background: #252a32;
+        color: var(--amber);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .terminal-a .left,
+      .terminal-a .right {
+        padding: 24px 26px;
+      }
+
+      .terminal-a .left {
+        display: grid;
+        place-items: center;
+        text-align: center;
+      }
+
+      .terminal-a .right {
+        border-left: 1px solid rgba(217, 144, 47, 0.82);
+      }
+
+      .hat {
+        color: var(--orange);
+        font-size: 15px;
+        line-height: 1.05;
+        text-shadow: 0 0 18px rgba(255, 140, 95, 0.26);
+      }
+
+      .welcome {
+        margin-bottom: 18px;
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      .identity {
+        margin-top: 17px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .tips-title {
+        color: var(--amber);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .tip-line {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .recent {
+        margin-top: 24px;
+        color: var(--amber);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .terminal-a .input-line {
+        padding: 15px 22px 18px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font-size: 15px;
+      }
+
+      /* Concept B */
+      .terminal-b {
+        border-color: rgba(127, 201, 236, 0.28);
+        background: #252a33;
+      }
+
+      .terminal-b .body {
+        padding: 24px 26px 22px;
+      }
+
+      .wordmark-row {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+
+      .signal {
+        color: var(--cyan);
+        font-size: 50px;
+        line-height: 1;
+      }
+
+      .wordmark {
+        display: inline-block;
+        background: linear-gradient(90deg, #7fc9ec 0%, #93d8d4 45%, #a7d982 100%);
+        background-clip: text;
+        color: transparent;
+        font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+        font-size: clamp(48px, 8vw, 82px);
+        line-height: 0.86;
+        letter-spacing: 0;
+        filter: drop-shadow(0 0 18px rgba(127, 201, 236, 0.1));
+      }
+
+      .banner {
+        margin-top: 20px;
+        border: 1px solid rgba(240, 179, 90, 0.86);
+        border-radius: 5px;
+        padding: 9px 12px;
+        color: var(--amber);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .login-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .terminal-b .status-lines {
+        margin-top: 28px;
+        display: grid;
+        gap: 10px;
+        font-size: 12px;
+      }
+
+      .terminal-b .entry {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .terminal-b .bottom-input {
+        margin: 22px -26px -22px;
+        padding: 13px 26px;
+        background: rgba(255, 255, 255, 0.035);
+        color: var(--text);
+        font-size: 15px;
+      }
+
+      /* Concept C */
+      .terminal-c {
+        border-color: rgba(138, 180, 255, 0.32);
+        background: #161c24;
+      }
+
+      .terminal-c .body {
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr);
+        min-height: 360px;
+      }
+
+      .rail {
+        padding: 20px 18px;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(0, 0, 0, 0.13);
+      }
+
+      .brand-compact {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .triangle-mark {
+        display: inline-grid;
+        width: 18px;
+        height: 18px;
+        place-items: center;
+        color: var(--amber);
+        font-size: 18px;
+        line-height: 1;
+        text-shadow: 0 0 16px rgba(240, 179, 90, 0.22);
+        transform: translateY(-1px);
+      }
+
+      .mini-hat {
+        color: var(--orange);
+        font-size: 12px;
+        line-height: 0.9;
+      }
+
+      .rail-section {
+        margin-top: 25px;
+      }
+
+      .rail-label {
+        margin-bottom: 8px;
+        color: var(--dim);
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .main-console {
+        padding: 20px 22px;
+      }
+
+      .run-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .run-title h3 {
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 18px;
+      }
+
+      .badge {
+        border: 1px solid rgba(167, 217, 130, 0.42);
+        border-radius: 4px;
+        padding: 5px 8px;
+        color: var(--green);
+        background: rgba(167, 217, 130, 0.08);
+        font-size: 11px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 74px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        min-height: 40px;
+        padding: 9px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.025);
+        font-size: 12px;
+      }
+
+      .step .label {
+        color: var(--blue);
+        font-weight: 700;
+      }
+
+      .step.warn .label {
+        color: var(--amber);
+      }
+
+      .approval-box {
+        margin-top: 18px;
+        border: 1px solid rgba(240, 179, 90, 0.56);
+        border-radius: 6px;
+        padding: 12px;
+        color: var(--muted);
+        background: rgba(240, 179, 90, 0.055);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .command-bar {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      /* Concept D */
+      .terminal-d {
+        border-color: rgba(143, 228, 194, 0.28);
+        background:
+          linear-gradient(180deg, rgba(143, 228, 194, 0.045), transparent 32%),
+          #11161d;
+      }
+
+      .terminal-d .body {
+        min-height: 360px;
+        padding: 30px;
+      }
+
+      .minimal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .avatar {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+      }
+
+      .avatar-mark {
+        display: grid;
+        width: 50px;
+        height: 50px;
+        place-items: center;
+        border: 1px solid rgba(143, 228, 194, 0.28);
+        border-radius: 8px;
+        background: rgba(143, 228, 194, 0.06);
+      }
+
+      .avatar h3 {
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 20px;
+      }
+
+      .avatar p {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .status-pill {
+        border: 1px solid rgba(127, 201, 236, 0.25);
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: var(--cyan);
+        background: rgba(127, 201, 236, 0.06);
+        font-size: 11px;
+      }
+
+      .question-box {
+        margin-top: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .question-input {
+        padding: 17px 18px;
+        color: var(--text);
+        font-size: 15px;
+      }
+
+      .shortcut-row {
+        display: flex;
+        gap: 12px;
+        padding: 12px 18px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .mini-card {
+        min-height: 82px;
+        padding: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.025);
+      }
+
+      .mini-card strong {
+        display: block;
+        color: var(--text);
+        font-size: 12px;
+      }
+
+      .mini-card span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .live-line {
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.65;
+      }
+
+      .notes {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .note {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.035);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .note strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1120px) {
+        .board {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .page {
+          width: min(100vw - 28px, 1480px);
+          padding-top: 24px;
+        }
+
+        .intro,
+        .concept-head,
+        .terminal-a .hero-panel,
+        .terminal-c .body,
+        .cards,
+        .notes {
+          grid-template-columns: 1fr;
+        }
+
+        .tagline {
+          justify-content: flex-start;
+        }
+
+        .terminal-a .right,
+        .rail {
+          border-left: 0;
+          border-right: 0;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .step {
+          grid-template-columns: 1fr;
+        }
+
+        .wordmark-row {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="intro">
+        <div>
+          <h1>WARDEN CLI Design Concepts</h1>
+          <p>
+            Claude/Gemini CLI의 장점은 유지하되, WARDEN은 분석 에이전트 서버를 실행하고 루프,
+            도구, 승인 상태를 신뢰감 있게 보여주는 방향으로 정리했습니다. 캐릭터성은 작은
+            멀린 모자 정도만 남기고, 실제 텍스트는 운영 콘솔에 맞는 명칭을 사용합니다.
+          </p>
+        </div>
+        <div class="tagline">
+          <span class="chip">Dark terminal</span>
+          <span class="chip">Korean runtime logs</span>
+          <span class="chip">Merlin hat only</span>
+          <span class="chip">No fantasy labels</span>
+        </div>
+      </section>
+
+      <section class="board">
+        <article class="concept">
+          <header class="concept-head">
+            <div>
+              <div class="concept-kicker">CONCEPT A</div>
+              <h2 class="concept-title">Sentinel Welcome Panel</h2>
+            </div>
+            <p class="concept-desc">
+              Claude Code처럼 처음 실행 화면의 신뢰감을 주는 구성입니다. 좌측은 정체성, 우측은
+              시작 명령과 최근 실행을 분리합니다.
+            </p>
+          </header>
+          <section class="terminal terminal-a">
+            <div class="hero-panel">
+              <div class="title-tab">WARDEN CLI v0.1.0</div>
+              <div class="left">
+                <div>
+                  <div class="welcome">Welcome back, basilry</div>
+                  <pre class="hat">        /\
+       /  \
+      /____\
+     /______\
+        ||</pre>
+                  <div class="identity">
+                    Codex OAuth · model: codex · iterations: 2<br />
+                    ~/Projects/02021_warden_agents
+                  </div>
+                </div>
+              </div>
+              <div class="right">
+                <div class="tips-title">Tips for getting started</div>
+                <div class="tip-line">Run <span class="cyan">/server</span> to inspect the runtime server.</div>
+                <div class="tip-line">Run <span class="cyan">/runs</span> to review recent team executions.</div>
+                <div class="tip-line">External OSINT stays blocked until human approval.</div>
+                <div class="recent">Recent activity</div>
+                <div class="tip-line">
+                  <span class="green">run_mqf7mlsh_0004</span> · 공급망 리스크 · waiting_approval
+                </div>
+              </div>
+            </div>
+            <div class="input-line"><span class="prompt">❯</span> 공급망 리스크<span class="cursor"></span></div>
+          </section>
+        </article>
+
+        <article class="concept">
+          <header class="concept-head">
+            <div>
+              <div class="concept-kicker">CONCEPT B</div>
+              <h2 class="concept-title">Gradient Wordmark Console</h2>
+            </div>
+            <p class="concept-desc">
+              Gemini처럼 강한 브랜드 첫인상을 주는 시안입니다. 대형 로고는 쓰되 상태 메시지는
+              절제된 톤으로 정리합니다.
+            </p>
+          </header>
+          <section class="terminal terminal-b">
+            <div class="terminal-top">
+              <span class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></span>
+              <span>warden · codex · .env active</span>
+            </div>
+            <div class="body">
+              <div class="wordmark-row">
+                <pre class="signal"> /\ 
+/__\
+ ||</pre>
+                <div class="wordmark">WARDEN</div>
+              </div>
+              <div class="banner">
+                External calls require approval. Policy, MCP routing, ACH, SourceVet, and approvals remain authoritative.
+              </div>
+              <div class="login-row">
+                <span>Logged in with Codex OAuth:</span>
+                <span class="cyan">basilry</span>
+                <span class="dim">/auth</span>
+              </div>
+              <div class="status-lines">
+                <div class="entry"><span class="blue">[루프]</span><span>반복 1/2 · 목표 해석 및 실행 계획 구성</span></div>
+                <div class="entry"><span class="cyan">[모델]</span><span>codex-cli:default 응답 수신</span></div>
+                <div class="entry"><span class="green">[도구]</span><span>run_warden_team 성공 · ACH 후보 2건 유지</span></div>
+                <div class="entry"><span class="amber">[승인]</span><span>external_osint_fetch 승인 대기</span></div>
+              </div>
+              <div class="bottom-input"><span class="purple">❯</span> /approve external_osint_fetch</div>
+            </div>
+          </section>
+        </article>
+
+        <article class="concept">
+          <header class="concept-head">
+            <div>
+              <div class="concept-kicker">CONCEPT C</div>
+              <h2 class="concept-title">Operations Runtime Console</h2>
+            </div>
+            <p class="concept-desc">
+              실제로 에이전트 서버가 돌고 있다는 감각을 가장 잘 주는 구성입니다. 느린 구간에서도
+              내부 진행 상태가 보여서 체감 레이턴시를 줄입니다.
+            </p>
+          </header>
+          <section class="terminal terminal-c">
+            <div class="terminal-top">
+              <span>WARDEN Runtime</span>
+              <span class="kbd">⌘K commands · ? help · /exit</span>
+            </div>
+            <div class="body">
+              <aside class="rail">
+                <div class="brand-compact">
+                  <span class="triangle-mark" aria-hidden="true">▼</span>
+                  <span>WARDEN</span>
+                </div>
+                <div class="rail-section">
+                  <div class="rail-label">Session</div>
+                  <div class="metric"><span>Model</span><span class="cyan">codex</span></div>
+                  <div class="metric"><span>Server</span><span class="green">ready</span></div>
+                  <div class="metric"><span>Policy</span><span class="amber">guarded</span></div>
+                </div>
+                <div class="rail-section">
+                  <div class="rail-label">Queue</div>
+                  <div class="metric"><span>Runs</span><span>4</span></div>
+                  <div class="metric"><span>Approval</span><span class="amber">1</span></div>
+                  <div class="metric"><span>Failures</span><span>0</span></div>
+                </div>
+              </aside>
+              <div class="main-console">
+                <div class="run-title">
+                  <div>
+                    <h3>Objective: 공급망 리스크</h3>
+                    <div class="muted">run_mqf7mlsh_0004 · started 14:38:09</div>
+                  </div>
+                  <span class="badge">waiting_approval</span>
+                </div>
+                <div class="timeline">
+                  <div class="step">
+                    <span class="label">[루프]</span>
+                    <span>반복 1/2 · 팀 실행 계획을 구성했습니다.</span>
+                    <span class="green">done</span>
+                  </div>
+                  <div class="step">
+                    <span class="label">[모델]</span>
+                    <span>LLM 제안 수신 · 정책 검증 완료.</span>
+                    <span class="green">done</span>
+                  </div>
+                  <div class="step">
+                    <span class="label">[도구]</span>
+                    <span>run_warden_team · ACH/SourceVet 결과 병합.</span>
+                    <span class="green">done</span>
+                  </div>
+                  <div class="step warn">
+                    <span class="label">[승인]</span>
+                    <span>external_osint_fetch · 외부 호출 권한 필요.</span>
+                    <span class="amber">blocked</span>
+                  </div>
+                </div>
+                <div class="approval-box">
+                  Pending approval: <span class="amber">external_osint_fetch</span><br />
+                  외부 OSINT 조회는 승인 전까지 실행되지 않습니다. 승인하면 다음 루프에서 MCP 라우팅이 계속됩니다.
+                </div>
+                <div class="command-bar"><span class="prompt">❯</span> /approve external_osint_fetch</div>
+              </div>
+            </div>
+          </section>
+        </article>
+
+        <article class="concept">
+          <header class="concept-head">
+            <div>
+              <div class="concept-kicker">CONCEPT D</div>
+              <h2 class="concept-title">Minimal Merlin Prompt</h2>
+            </div>
+            <p class="concept-desc">
+              가장 차분한 채팅형 CLI입니다. 큰 로고보다 입력 경험을 중심에 두고, 필요한 상태만
+              작은 카드로 노출합니다.
+            </p>
+          </header>
+          <section class="terminal terminal-d">
+            <div class="terminal-top">
+              <span class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></span>
+              <span>~/Projects/02021_warden_agents</span>
+            </div>
+            <div class="body">
+              <div class="minimal-head">
+                <div class="avatar">
+                  <div class="avatar-mark">
+                    <pre class="mini-hat"> /\
+/__\
+ ||</pre>
+                  </div>
+                  <div>
+                    <h3>WARDEN</h3>
+                    <p>Agent runtime · Codex OAuth · MCP guarded</p>
+                  </div>
+                </div>
+                <span class="status-pill">server online</span>
+              </div>
+              <div class="question-box">
+                <div class="question-input">
+                  <span class="prompt">❯</span> 공급망 리스크 분석하고 승인 필요한 단계는 멈춰줘<span class="cursor"></span>
+                </div>
+                <div class="shortcut-row">
+                  <span>? shortcuts</span>
+                  <span>/runs</span>
+                  <span>/server</span>
+                  <span>/approvals</span>
+                </div>
+              </div>
+              <div class="cards">
+                <div class="mini-card">
+                  <strong>Runtime</strong>
+                  <span>서버 실행 중, 루프 2회 설정.</span>
+                </div>
+                <div class="mini-card">
+                  <strong>Model</strong>
+                  <span>codex-cli provider 연결.</span>
+                </div>
+                <div class="mini-card">
+                  <strong>Approvals</strong>
+                  <span>외부 호출은 승인 후 실행.</span>
+                </div>
+              </div>
+              <div class="live-line">
+                <span class="blue">[루프]</span> 목표 정규화 중...
+                <span class="cyan">[모델]</span> 실행 제안 대기...
+                <span class="green">[도구]</span> MCP 라우팅 준비...
+              </div>
+            </div>
+          </section>
+        </article>
+      </section>
+
+      <section class="notes">
+        <div class="note">
+          <strong>추천 1순위</strong>
+          Concept C는 실제 에이전트 런타임의 진행 상태가 가장 잘 보여서 레이턴시 체감 문제를 줄입니다.
+        </div>
+        <div class="note">
+          <strong>첫 실행 화면</strong>
+          Concept A는 `warden`만 입력했을 때의 웰컴 화면으로 적합합니다.
+        </div>
+        <div class="note">
+          <strong>브랜드성</strong>
+          Concept B는 가장 기억에 남지만, 매 실행마다 쓰기에는 시각적 무게가 큽니다.
+        </div>
+        <div class="note">
+          <strong>채팅 UX</strong>
+          Concept D는 상시 대화 모드에 적합하고 구현 난이도도 낮습니다.
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

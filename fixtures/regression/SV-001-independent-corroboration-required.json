@@ -1,0 +1,15 @@
+{
+  "id": "SV-001-independent-corroboration-required",
+  "title": "SourceVet requires independent corroboration for consequential single-source claims",
+  "input": {
+    "mode": "p0",
+    "userRequest": "Run SourceVet scenario SV-001-independent-corroboration-required before promoting claims into analysis.",
+    "fixtureVariant": "sourcevet_uncorroborated"
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["source-independent-corroboration"],
+    "mustIncludeFailureClass": "source_uncorroborated_upgrade"
+  },
+  "lockedReason": "SourceVet must not allow high-confidence single-source claims to appear independently corroborated."
+}

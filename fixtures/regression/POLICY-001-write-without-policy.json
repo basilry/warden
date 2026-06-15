@@ -1,0 +1,14 @@
+{
+  "id": "POLICY-001-write-without-policy",
+  "title": "WRITE tool calls without prior policy decision must fail verification",
+  "input": {
+    "userRequest": "가상 방산 공급망 핵심 부품 수입 급감의 원인을 분석해줘.",
+    "fixtureVariant": "skip_policy_for_write"
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["trace-complete"],
+    "mustIncludeFailureClass": "trace_gap"
+  },
+  "lockedReason": "Policy-gated tool use is a WARDEN invariant."
+}

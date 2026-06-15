@@ -1,0 +1,15 @@
+{
+  "id": "SV-002-circular-source-lineage",
+  "title": "SourceVet detects circular source lineage",
+  "input": {
+    "mode": "p0",
+    "userRequest": "Run SourceVet scenario SV-002-circular-source-lineage before promoting claims into analysis.",
+    "fixtureVariant": "sourcevet_circular"
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["source-circular-lineage"],
+    "mustIncludeFailureClass": "circular_source_lineage"
+  },
+  "lockedReason": "WARDEN must reject apparent corroboration when reports cite each other in a closed loop."
+}

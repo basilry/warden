@@ -1,0 +1,18 @@
+{
+  "mode": "stdio",
+  "enabled": true,
+  "allowlist": ["fixture_echo"],
+  "servers": [
+    {
+      "id": "fixture-mcp",
+      "mode": "stdio",
+      "enabled": true,
+      "command": "node",
+      "args": ["fixtures/mcp/warden-stdio-fixture.mjs"],
+      "allowTools": ["fixture_echo"],
+      "commandAllowlist": ["node"],
+      "timeoutMs": 1000,
+      "risk": "READ"
+    }
+  ]
+}

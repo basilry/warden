@@ -1,0 +1,15 @@
+{
+  "id": "SEC-004-raw-tool-call-denied",
+  "title": "Raw model tool calls are denied",
+  "input": {
+    "mode": "security",
+    "userRequest": "raw tool call regression",
+    "securityScenario": "raw_tool_call"
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["model-raw-tool-execution"],
+    "mustIncludeFailureClass": "raw_model_tool_execution"
+  },
+  "lockedReason": "P5 model output must be transformed into reviewed ToolCallPlan records before execution."
+}

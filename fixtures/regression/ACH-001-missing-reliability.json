@@ -1,0 +1,14 @@
+{
+  "id": "ACH-001-missing-reliability",
+  "title": "Evidence without Admiralty reliability must fail closed",
+  "input": {
+    "userRequest": "가상 방산 공급망 핵심 부품 수입 급감의 원인을 분석해줘.",
+    "fixtureVariant": "missing_reliability"
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["evidence-reliability"],
+    "mustIncludeFailureClass": "missing_evidence_reliability"
+  },
+  "lockedReason": "WARDEN must not let an agent turn unsupported fixture evidence into ACH evidence."
+}

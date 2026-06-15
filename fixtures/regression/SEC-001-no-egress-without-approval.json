@@ -1,0 +1,25 @@
+{
+  "id": "SEC-001-no-egress-without-approval",
+  "title": "External egress requires approval",
+  "input": {
+    "mode": "policy",
+    "userRequest": "외부 OSINT 조회를 실행해줘.",
+    "availableCapabilities": ["RFI Watch"],
+    "policyCalls": [
+      {
+        "id": "sec-egress-1",
+        "toolName": "external_osint_fetch",
+        "capability": "RFI Watch",
+        "risk": "EXTERNAL",
+        "inputSummary": "Fetch external public sources.",
+        "requestedBy": "supervisor"
+      }
+    ]
+  },
+  "expected": {
+    "finalStatus": "fail",
+    "mustIncludeChecks": ["policy-approval-required", "policy-external-require_approval"],
+    "mustIncludeFailureClass": "external_approval_required"
+  },
+  "lockedReason": "P5 live integrations must not allow external egress without explicit approval."
+}

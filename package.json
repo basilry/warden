@@ -1,0 +1,42 @@
+{
+  "name": "warden-agents",
+  "version": "0.1.0",
+  "description": "WARDEN controlled multi-agent harness P0 for defense analysis workflows.",
+  "type": "module",
+  "bin": {
+    "warden": "./bin/warden.mjs"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/runtime/start-server.ts",
+    "server": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/runtime/start-server.ts",
+    "cli": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/cli/warden.ts",
+    "build": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/check-imports.ts",
+    "demo:warden": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-team-demo.ts",
+    "demo:warden:p1": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-p1-demo.ts",
+    "demo:warden:codex": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-codex-demo.ts",
+    "demo:warden:sourcevet": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-sourcevet-demo.ts",
+    "demo:warden:report": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-report-demo.ts",
+    "demo:warden:persistence": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-persistence-demo.ts",
+    "demo:warden:storage-regression": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-storage-regression.ts",
+    "demo:warden:codex-regression": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-codex-regression.ts",
+    "demo:warden:env-regression": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-env-regression.ts",
+    "demo:warden:p5-regression": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-p5-regression.ts",
+    "demo:warden:cli": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-cli-regression.ts",
+    "demo:warden:runtime": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-runtime-regression.ts",
+    "demo:warden:regression": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-regression.ts",
+    "submission:verify": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/build-submission-package.ts --verify-only",
+    "submission:package": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/build-submission-package.ts",
+    "test": "npm run build && npm run demo:warden:regression && npm run demo:warden:storage-regression && npm run demo:warden:codex-regression && npm run demo:warden:env-regression && npm run demo:warden:p5-regression && npm run demo:warden:runtime && npm run demo:warden:cli"
+  },
+  "keywords": [
+    "agent-harness",
+    "multi-agent",
+    "mcp",
+    "audit",
+    "defense"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.14.0"
+  }
+}
