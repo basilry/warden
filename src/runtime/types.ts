@@ -1,13 +1,14 @@
 import type { ApprovalRequest } from "../agent/approval.ts";
 import type { ModelResponse } from "../agent/model-adapter.ts";
 import type { ToolResult } from "../agent/mcp/types.ts";
-import type { RuntimeAnswer } from "./answer.ts";
+import type { RuntimeAnswer, RuntimeAnswerMode } from "./answer.ts";
 
 export type RuntimeRunStatus = "queued" | "running" | "waiting_approval" | "succeeded" | "failed";
 
 export type RuntimeRunRequest = {
   objective?: string;
   withSourceVet?: boolean;
+  answerMode?: RuntimeAnswerMode;
   maxIterations?: number;
 };
 
@@ -50,6 +51,7 @@ export type RuntimeRun = {
   maxIterations: number;
   iteration: number;
   withSourceVet: boolean;
+  answerMode: RuntimeAnswerMode;
   events: RuntimeEvent[];
   modelResponses: ModelResponse[];
   toolResults: RuntimeToolRecord[];

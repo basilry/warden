@@ -72,6 +72,18 @@ warden
 warden run "방산 공급망 핵심 부품 수입 급감 원인을 분석해줘"
 ```
 
+모델 보조 답변 초안을 추가하려면:
+
+```bash
+warden run "대한민국 및 동북아 공급망에 대해 알려줘" --answer-mode assisted
+```
+
+기계가 읽을 JSON 결과가 필요하면:
+
+```bash
+warden run "대한민국 및 동북아 공급망에 대해 알려줘" --json
+```
+
 HTTP runtime server를 직접 띄우려면:
 
 ```bash
@@ -108,6 +120,8 @@ curl -sS http://127.0.0.1:8787/runs/<runId>
 | `npm run cli` | local `warden` CLI 실행 |
 | `warden` | npm link/install 후 대화형 CLI 실행 |
 | `warden run "<objective>"` | objective 1회 실행 |
+| `warden run "<objective>" --answer-mode assisted` | 모델 보조 답변 초안 포함 |
+| `warden run "<objective>" --json` | answer object 포함 JSON 출력 |
 | `warden server` | HTTP runtime server 실행 |
 | `npm start` | WARDEN Agent Runtime Server 실행 |
 | `npm run server` | `npm start`와 동일 |

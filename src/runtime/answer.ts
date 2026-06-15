@@ -1,9 +1,17 @@
 import type { ApprovalRequest } from "../agent/approval.ts";
-import type { ModelResponse } from "../agent/model-adapter.ts";
-import type { TeamRunResult } from "../agent/types.ts";
+import {
+  createModelRequest,
+  type ModelAdapter,
+  type ModelRequest,
+  type ModelResponse
+} from "../agent/model-adapter.ts";
+import type { TeamRunResult, VerificationReport } from "../agent/types.ts";
 import type { RuntimeRunStatus } from "./types.ts";
 
+export type RuntimeAnswerMode = "deterministic" | "assisted";
+
 export type RuntimeAnswer = {
+  mode: RuntimeAnswerMode;
   title: string;
   directAnswer: string;
   keyFindings: string[];
@@ -12,6 +20,17 @@ export type RuntimeAnswer = {
   blockedActions: string[];
   nextSteps: string[];
   authorityRefs: string[];
+  warnings: string[];
+};
+
+export type RuntimeAnswerDraft = {
+  title?: string;
+  directAnswer?: string;
+  nextSteps?: string[];
+};
+
+export type AnswerValidationReport = {
+  status: "pass" | "warn";
   warnings: string[];
 };
 
@@ -50,6 +69,7 @@ export function composeDeterministicAnswer(context: AnswerContext): RuntimeAnswe
   ];
 
   return {
+    mode: "deterministic",
     title: context.objective,
     directAnswer: buildDirectAnswer(context.objective, survivors, pendingApprovals.length),
     keyFindings,
@@ -65,6 +85,182 @@ export function composeDeterministicAnswer(context: AnswerContext): RuntimeAnswe
     authorityRefs: buildAuthorityRefs(context),
     warnings: buildWarnings(context)
   };
+}
+
+export async function composeModelAssistedAnswer(
+  context: AnswerContext,
+  model: ModelAdapter
+): Promise<{ answer: RuntimeAnswer; response?: ModelResponse<unknown> }> {
+  const request = createAnswerDraftRequest(context);
+  const response = await model.generate<unknown>(request);
+  return {
+    answer: composeModelAssistedAnswerFromResponse(context, response),
+    response
+  };
+}
+
+export function createAnswerDraftRequest(context: AnswerContext): ModelRequest {
+  const deterministic = composeDeterministicAnswer(context);
+  return createModelRequest({
+    role: "briefing",
+    responseFormat: "json",
+    prompt: [
+      "You are drafting a Korean user-facing answer for WARDEN.",
+      "You may improve wording only. Do not change ACH survivors, policy status, approvals, evidence, or uncertainty.",
+      "Return only JSON with optional fields: title, directAnswer, nextSteps.",
+      "Do not claim external OSINT was used if approval is pending.",
+      "",
+      `Objective: ${context.objective}`,
+      `Deterministic direct answer: ${deterministic.directAnswer}`,
+      `Key findings: ${deterministic.keyFindings.join(" | ")}`,
+      `Uncertainty: ${deterministic.uncertainty.join(" | ")}`,
+      `Blocked actions: ${deterministic.blockedActions.join(" | ") || "none"}`
+    ].join("\n"),
+    context: buildAnswerDraftContext(context, deterministic)
+  });
+}
+
+export function composeModelAssistedAnswerFromResponse(
+  context: AnswerContext,
+  response: ModelResponse<unknown>
+): RuntimeAnswer {
+  const deterministic = composeDeterministicAnswer(context);
+  const draft = parseAnswerDraft(response.output);
+
+  if (!draft) {
+    return {
+      ...deterministic,
+      warnings: uniqueNonEmpty([
+        ...deterministic.warnings,
+        ...response.warnings,
+        "모델 보조 답변 초안이 유효한 RuntimeAnswerDraft가 아니라 deterministic answer로 fallback했습니다."
+      ])
+    };
+  }
+
+  const candidate: RuntimeAnswer = {
+    ...deterministic,
+    mode: "assisted",
+    title: draft.title?.trim() || deterministic.title,
+    directAnswer: draft.directAnswer?.trim() || deterministic.directAnswer,
+    nextSteps: uniqueNonEmpty([...(draft.nextSteps ?? []), ...deterministic.nextSteps]),
+    warnings: uniqueNonEmpty([...deterministic.warnings, ...response.warnings])
+  };
+  const validation = validateAnswerAgainstAuthorities(candidate, context);
+
+  if (validation.status === "warn") {
+    return {
+      ...candidate,
+      directAnswer: validation.warnings.some((warning) => warning.includes("directAnswer"))
+        ? deterministic.directAnswer
+        : candidate.directAnswer,
+      warnings: uniqueNonEmpty([...candidate.warnings, ...validation.warnings])
+    };
+  }
+
+  return {
+    ...candidate,
+    warnings: uniqueNonEmpty([...candidate.warnings, ...validation.warnings])
+  };
+}
+
+export function validateAnswerAgainstAuthorities(answer: RuntimeAnswer, context: AnswerContext): AnswerValidationReport {
+  const warnings: string[] = [];
+  const survivors = context.teamResult?.outputs.ach?.survivors ?? [];
+  const pendingApprovals = context.approvals.filter((approval) => approval.status === "pending");
+  const answerText = [
+    answer.directAnswer,
+    ...answer.keyFindings,
+    ...answer.uncertainty,
+    ...answer.blockedActions,
+    ...answer.nextSteps
+  ].join("\n");
+
+  for (const survivor of survivors) {
+    if (!answer.keyFindings.some((finding) => finding.includes(survivor))) {
+      warnings.push(`authority violation: survivor "${survivor}" missing from keyFindings.`);
+    }
+  }
+
+  for (const approval of pendingApprovals) {
+    if (!answer.blockedActions.some((blocked) => blocked.includes(approval.action.name))) {
+      warnings.push(`authority violation: pending approval "${approval.action.name}" missing from blockedActions.`);
+    }
+  }
+
+  if (
+    pendingApprovals.length > 0 &&
+    /외부.*(반영했습니다|반영됨|반영했다|수집 완료|확인 완료)|승인 완료/.test(answer.directAnswer)
+  ) {
+    warnings.push("authority violation: directAnswer implies external evidence or approval completion before approval.");
+  }
+
+  if (/확정 결론|단정할 수 있습니다|단정한다/.test(answer.directAnswer)) {
+    warnings.push("authority violation: directAnswer overstates certainty.");
+  }
+
+  if (context.teamResult?.outputs.sourceReview?.flags.length) {
+    for (const flag of context.teamResult.outputs.sourceReview.flags) {
+      if (!answerText.includes(flag.code) && !answerText.includes(flag.summary)) {
+        warnings.push(`authority warning: SourceVet flag "${flag.code}" is not visible in the answer.`);
+      }
+    }
+  }
+
+  const verification = context.teamResult?.outputs.verification;
+  for (const risk of verificationResidualRisk(verification)) {
+    if (!answer.uncertainty.some((item) => item.includes(risk))) {
+      warnings.push(`authority warning: residual risk missing from uncertainty: ${risk}`);
+    }
+  }
+
+  return {
+    status: warnings.length > 0 ? "warn" : "pass",
+    warnings
+  };
+}
+
+function buildAnswerDraftContext(context: AnswerContext, deterministic: RuntimeAnswer): unknown {
+  return {
+    objective: context.objective,
+    runStatus: context.runStatus,
+    deterministicAnswer: {
+      directAnswer: deterministic.directAnswer,
+      keyFindings: deterministic.keyFindings,
+      uncertainty: deterministic.uncertainty,
+      blockedActions: deterministic.blockedActions,
+      nextSteps: deterministic.nextSteps,
+      authorityRefs: deterministic.authorityRefs
+    }
+  };
+}
+
+function parseAnswerDraft(output: unknown): RuntimeAnswerDraft | undefined {
+  const parsed = typeof output === "string" ? parseJsonObject(output) : output;
+  if (!isRecord(parsed)) return undefined;
+  const directAnswer = typeof parsed.directAnswer === "string" ? parsed.directAnswer : undefined;
+  const title = typeof parsed.title === "string" ? parsed.title : undefined;
+  const nextSteps = Array.isArray(parsed.nextSteps)
+    ? parsed.nextSteps.filter((item): item is string => typeof item === "string")
+    : undefined;
+  if (!directAnswer && !title && !nextSteps?.length) return undefined;
+  return { title, directAnswer, nextSteps };
+}
+
+function parseJsonObject(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function verificationResidualRisk(verification: VerificationReport | undefined): string[] {
+  return verification?.residualRisk ?? [];
 }
 
 function buildDirectAnswer(objective: string, survivors: string[], pendingApprovalCount: number): string {

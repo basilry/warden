@@ -31,7 +31,12 @@ function defaultOutput(request: ModelRequest): unknown {
     };
   }
   if (request.role === "briefing") {
-    return { tone: "audit", shouldOverrideDeterministicResult: false };
+    return {
+      title: "모델 보조 답변 초안",
+      directAnswer:
+        "모델 보조 초안: 제재 우회 비축, 공급망 교란 가설을 중심으로 검증된 범위에서 답변합니다. 외부 OSINT는 승인 전이라 반영하지 않았습니다.",
+      nextSteps: ["모델 초안 제안: 승인 후 공개 출처를 확인하고 SourceVet으로 재검토합니다."]
+    };
   }
   return { accepted: true, requestId: request.id };
 }

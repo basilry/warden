@@ -12,7 +12,13 @@ import type { CapabilityRouter, McpClient, RoutedToolCall } from "../agent/mcp/t
 import { createPolicyEngine } from "../agent/policy.ts";
 import { runTeamWorkflow } from "../agent/team-runner.ts";
 import type { TeamRunResult } from "../agent/types.ts";
-import { composeDeterministicAnswer } from "./answer.ts";
+import {
+  composeDeterministicAnswer,
+  composeModelAssistedAnswerFromResponse,
+  createAnswerDraftRequest,
+  type AnswerContext,
+  type RuntimeAnswerMode
+} from "./answer.ts";
 import type { RuntimeEvent, RuntimeRun, RuntimeRunRequest, RuntimeState, RuntimeToolRecord } from "./types.ts";
 
 const DEFAULT_OBJECTIVE =
@@ -44,6 +50,7 @@ export function startRuntimeRun(
     maxIterations: Math.max(1, Math.min(request.maxIterations ?? 2, 8)),
     iteration: 0,
     withSourceVet: request.withSourceVet === true,
+    answerMode: request.answerMode ?? resolveDefaultAnswerMode(),
     events: [],
     modelResponses: [],
     toolResults: [],
@@ -138,8 +145,8 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
 
       if (result.approvalRequest) {
         run.approvals = approvals.listAll();
-        updateRuntimeAnswer(run, latestTeamResult);
         run.status = "waiting_approval";
+        updateRuntimeAnswer(run, latestTeamResult);
         touch(run);
         emit(run, "approval.pending", `${plan.toolName} 승인 대기 중입니다.`, result.approvalRequest, deps);
       }
@@ -165,6 +172,7 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
     if (run.status !== "waiting_approval") {
       run.status = "succeeded";
     }
+    await finalizeRuntimeAnswer(run, latestTeamResult, model, deps);
     run.completedAt = nowIso();
     touch(run);
     emit(
@@ -217,6 +225,10 @@ function shouldRequestModelProposal(iteration: number): boolean {
   return iteration === 1;
 }
 
+function resolveDefaultAnswerMode(): RuntimeAnswerMode {
+  return process.env.WARDEN_ANSWER_MODE === "assisted" ? "assisted" : "deterministic";
+}
+
 function updateRuntimeAnswer(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): void {
   run.outputs.answer = composeDeterministicAnswer({
     objective: run.objective,
@@ -225,6 +237,61 @@ function updateRuntimeAnswer(run: RuntimeRun, latestTeamResult: TeamRunResult | 
     approvals: run.approvals,
     modelResponses: run.modelResponses
   });
+}
+
+async function finalizeRuntimeAnswer(
+  run: RuntimeRun,
+  latestTeamResult: TeamRunResult | undefined,
+  model: ModelAdapter,
+  deps: RuntimeDependencies
+): Promise<void> {
+  const context = buildAnswerContext(run, latestTeamResult);
+  if (run.answerMode !== "assisted") {
+    run.outputs.answer = composeDeterministicAnswer(context);
+    return;
+  }
+
+  const request = createAnswerDraftRequest(context);
+  emit(
+    run,
+    "model.requested",
+    `${model.id}에 답변 초안을 요청합니다.`,
+    { model: model.id, role: request.role, answerMode: run.answerMode },
+    deps
+  );
+  const modelStartedAt = Date.now();
+  try {
+    const response = await model.generate<unknown>(request);
+    const modelDurationMs = Date.now() - modelStartedAt;
+    run.modelResponses.push(response);
+    emit(
+      run,
+      "model.proposal",
+      `${response.model}에서 답변 초안을 받았습니다.`,
+      { warnings: response.warnings, model: response.model, role: request.role, durationMs: modelDurationMs },
+      deps
+    );
+    run.outputs.answer = composeModelAssistedAnswerFromResponse(buildAnswerContext(run, latestTeamResult), response);
+  } catch (error) {
+    const fallback = composeDeterministicAnswer(context);
+    run.outputs.answer = {
+      ...fallback,
+      warnings: [
+        ...fallback.warnings,
+        `모델 보조 답변 생성 실패로 deterministic answer를 사용했습니다: ${(error as Error).message}`
+      ]
+    };
+  }
+}
+
+function buildAnswerContext(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): AnswerContext {
+  return {
+    objective: run.objective,
+    runStatus: run.status,
+    teamResult: latestTeamResult,
+    approvals: run.approvals,
+    modelResponses: run.modelResponses
+  };
 }
 
 function loadRuntimeRemotes(): McpClient[] {

@@ -6,11 +6,14 @@ import { pathToFileURL } from "node:url";
 import { loadWardenConfig, type WardenConfig } from "../agent/config.ts";
 import { loadDotEnvFile } from "../agent/env.ts";
 import { createRuntimeState, listRuntimeRuns, startRuntimeRun } from "../runtime/loop.ts";
+import type { RuntimeAnswerMode } from "../runtime/answer.ts";
 import { createWardenRuntimeServer, renderServerBanner } from "../runtime/server.ts";
 import type { RuntimeEvent, RuntimeRun, RuntimeState } from "../runtime/types.ts";
 
 type CliOptions = {
+  answerMode: RuntimeAnswerMode;
   iterations: number;
+  json: boolean;
   port: number;
   verbose: boolean;
 };
@@ -18,7 +21,9 @@ type CliOptions = {
 const DOTENV_LOAD = loadDotEnvFile();
 
 const DEFAULT_OPTIONS: CliOptions = {
+  answerMode: parseAnswerMode(process.env.WARDEN_ANSWER_MODE),
   iterations: 2,
+  json: false,
   port: Number(process.env.WARDEN_PORT ?? "8787"),
   verbose: false
 };
@@ -76,6 +81,16 @@ function parseOptions(args: string[]): { options: CliOptions; rest: string[] } {
       options.verbose = true;
       continue;
     }
+    if (arg === "--json") {
+      options.json = true;
+      continue;
+    }
+    if (arg === "--answer-mode") {
+      const value = args[index + 1];
+      index += 1;
+      options.answerMode = parseAnswerMode(value);
+      continue;
+    }
     if (arg === "--iterations" || arg === "-i") {
       const value = args[index + 1];
       index += 1;
@@ -131,7 +146,9 @@ async function runOneShot(objective: string, options: CliOptions): Promise<void>
   }
   const config = loadWardenConfig();
   const state = createRuntimeState();
-  printCliHeader(config, options);
+  if (!options.json) {
+    printCliHeader(config, options);
+  }
   await runObjective(trimmed, state, config, options);
 }
 
@@ -164,19 +181,26 @@ async function runObjective(
   config: WardenConfig,
   options: CliOptions
 ): Promise<void> {
-  output.write(`${color("목표", "bold")}: ${objective}\n`);
+  if (!options.json) {
+    output.write(`${color("목표", "bold")}: ${objective}\n`);
+  }
   const run = startRuntimeRun(
     state,
     {
       objective,
+      answerMode: options.answerMode,
       maxIterations: options.iterations
     },
     {
       config,
-      onEvent: (event) => printRuntimeEvent(event, options)
+      onEvent: options.json ? undefined : (event) => printRuntimeEvent(event, options)
     }
   );
   await waitForRun(run);
+  if (options.json) {
+    printRunJson(run);
+    return;
+  }
   printRunResult(run);
 }
 
@@ -197,14 +221,18 @@ function printRuntimeEvent(event: RuntimeEvent, options: CliOptions): void {
   }
   if (event.type === "model.requested") {
     const model = readEventString(event, "model") ?? "model";
-    output.write(`${color("[모델]", "cyan")} ${model}에 계획 제안을 요청하는 중...\n`);
+    const role = readEventString(event, "role");
+    const label = role === "briefing" ? "답변 초안" : "계획 제안";
+    output.write(`${color("[모델]", "cyan")} ${model}에 ${label}${objectParticle(label)} 요청하는 중...\n`);
     return;
   }
   if (event.type === "model.proposal") {
     const model = readEventString(event, "model");
+    const role = readEventString(event, "role");
     const durationMs = readEventNumber(event, "durationMs");
     const from = model ? ` (${model})` : "";
-    output.write(`${color("[모델]", "cyan")} 모델 제안 수신${from}${formatDurationSuffix(durationMs)}\n`);
+    const label = role === "briefing" ? "답변 초안" : "모델 제안";
+    output.write(`${color("[모델]", "cyan")} ${label} 수신${from}${formatDurationSuffix(durationMs)}\n`);
     return;
   }
   if (event.type === "mcp.tool_start") {
@@ -228,6 +256,33 @@ function printRuntimeEvent(event: RuntimeEvent, options: CliOptions): void {
   if (options.verbose) {
     output.write(`${color(`[${event.type}]`, "dim")} ${event.message}\n`);
   }
+}
+
+function printRunJson(run: RuntimeRun): void {
+  output.write(
+    `${JSON.stringify(
+      {
+        id: run.id,
+        objective: run.objective,
+        status: run.status,
+        iteration: run.iteration,
+        maxIterations: run.maxIterations,
+        answerMode: run.answerMode,
+        approvals: run.approvals.map((approval) => ({
+          id: approval.id,
+          status: approval.status,
+          action: approval.action.name,
+          risk: approval.decision.risk,
+          reason: translateReasonKo(approval.reason)
+        })),
+        toolResults: run.toolResults,
+        outputs: run.outputs,
+        error: run.error
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 function printRunResult(run: RuntimeRun): void {
@@ -404,9 +459,17 @@ function printHelp(): void {
   output.write("  warden \"<목표>\"                warden run과 동일\n");
   output.write("  warden server                  HTTP 런타임 서버 시작\n\n");
   output.write("옵션:\n");
+  output.write("  --answer-mode <deterministic|assisted> 답변 생성 모드, 기본 WARDEN_ANSWER_MODE 또는 deterministic\n");
+  output.write("  --json                         1회 실행 결과를 JSON으로 출력\n");
   output.write("  -i, --iterations <n>           루프 반복 횟수, 기본 2\n");
   output.write("  -p, --port <n>                 서버 포트, 기본 WARDEN_PORT 또는 8787\n");
   output.write("  -v, --verbose                  모든 런타임 이벤트 표시\n");
+}
+
+function parseAnswerMode(value: string | undefined): RuntimeAnswerMode {
+  if (!value || value === "deterministic") return "deterministic";
+  if (value === "assisted") return "assisted";
+  throw new Error(`올바르지 않은 answer mode입니다: ${value}. deterministic 또는 assisted를 사용하세요.`);
 }
 
 function parsePositiveInteger(value: string | undefined, label: string): number {
