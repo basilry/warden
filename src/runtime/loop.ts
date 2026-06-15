@@ -8,10 +8,12 @@ import { createLocalCapabilityRegistry } from "../agent/mcp/local-registry.ts";
 import { routeToolCallWithPolicy } from "../agent/mcp/router.ts";
 import { createStdioMcpClient } from "../agent/mcp/stdio-client.ts";
 import { loadMcpRegistryConfig } from "../agent/mcp/config.ts";
-import type { CapabilityRouter, McpClient, RoutedToolCall } from "../agent/mcp/types.ts";
+import type { CapabilityRouter, McpClient } from "../agent/mcp/types.ts";
+import { retrieveSupplyChainGrounding } from "../agent/knowledge/retrieval.ts";
 import { createPolicyEngine } from "../agent/policy.ts";
 import { runTeamWorkflow } from "../agent/team-runner.ts";
-import type { TeamRunResult } from "../agent/types.ts";
+import type { KnowledgeUnit, TeamRunResult } from "../agent/types.ts";
+import { approvePendingApproval, rejectPendingApproval } from "./approval-actions.ts";
 import {
   composeDeterministicAnswer,
   composeModelAssistedAnswerFromResponse,
@@ -19,7 +21,16 @@ import {
   type AnswerContext,
   type RuntimeAnswerMode
 } from "./answer.ts";
-import type { RuntimeEvent, RuntimeRun, RuntimeRunRequest, RuntimeState, RuntimeToolRecord } from "./types.ts";
+import { EXTERNAL_OSINT_FETCH_TOOL, fetchApprovedExternalOsint } from "./external-fetch.ts";
+import { selectRuntimeToolPlan } from "./planner.ts";
+import type {
+  RuntimeDomainGrounding,
+  RuntimeEvent,
+  RuntimeRun,
+  RuntimeRunRequest,
+  RuntimeState,
+  RuntimeToolRecord
+} from "./types.ts";
 
 const DEFAULT_OBJECTIVE =
   "가상 방산 공급망 핵심 부품 수입 급감의 원인을 분석하고 통제 가능한 에이전트 루프로 처리해줘.";
@@ -29,6 +40,13 @@ export type RuntimeDependencies = {
   model?: ModelAdapter;
   remotes?: McpClient[];
   onEvent?: (event: RuntimeEvent, run: RuntimeRun) => void;
+};
+
+export type RuntimeApprovalCommand = {
+  approvalId?: string;
+  toolName?: string;
+  actor?: string;
+  reason?: string;
 };
 
 export function createRuntimeState(): RuntimeState {
@@ -79,12 +97,15 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
   const trace = createTraceRecorder(run.id);
   const router = createRuntimeRouter(run.objective, deps, { withSourceVet: run.withSourceVet });
   let latestTeamResult: TeamRunResult | undefined;
+  let latestPlannerProposal = undefined as Awaited<ReturnType<ModelAdapter["generate"]>> | undefined;
 
   run.status = "running";
   touch(run);
   emit(run, "run.started", `모델 ${model.id}로 런타임 루프를 시작했습니다.`, { model: model.id }, deps);
 
   try {
+    attachDomainGrounding(run, deps);
+
     for (let index = 1; index <= run.maxIterations; index += 1) {
       run.iteration = index;
       touch(run);
@@ -108,6 +129,7 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
         const proposal = await model.generate(modelRequest);
         const modelDurationMs = Date.now() - modelStartedAt;
         run.modelResponses.push(proposal);
+        latestPlannerProposal = proposal;
         emit(
           run,
           "model.proposal",
@@ -117,12 +139,25 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
         );
       }
 
-      const plan = buildDeterministicRuntimeToolPlan(run, index);
+      const selection = selectRuntimeToolPlan({
+        run,
+        iteration: index,
+        proposal: index === 1 ? latestPlannerProposal : undefined,
+        allowlist: router.allowlist,
+        allowedCapabilities: ["Hypothesis Analysis", "RFI Watch"]
+      });
+      const plan = selection.selected;
       emit(
         run,
         "mcp.tool_start",
         `${plan.toolName}을 정책 검토와 MCP 라우터로 전달합니다.`,
-        { toolName: plan.toolName, capability: plan.capability, risk: plan.risk },
+        {
+          toolName: plan.toolName,
+          capability: plan.capability,
+          risk: plan.risk,
+          plannerSource: selection.source,
+          plannerWarnings: selection.warnings
+        },
         deps
       );
       const toolStartedAt = Date.now();
@@ -158,12 +193,16 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
           teamStatus: result.output.run.status,
           survivors: result.output.outputs.ach?.survivors,
           traceEvents: result.output.trace.length,
+          domainGrounding: run.outputs.domainGrounding,
+          fetchedEvidence: run.outputs.fetchedEvidence,
           answer: composeDeterministicAnswer({
             objective: run.objective,
             runStatus: run.status,
             teamResult: result.output,
             approvals: run.approvals,
-            modelResponses: run.modelResponses
+            modelResponses: run.modelResponses,
+            domainGrounding: run.outputs.domainGrounding,
+            fetchedEvidence: run.outputs.fetchedEvidence
           })
         };
       }
@@ -189,6 +228,64 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
     touch(run);
     emit(run, "run.failed", run.error, undefined, deps);
   }
+}
+
+export async function approveRuntimeApproval(
+  state: RuntimeState,
+  runId: string,
+  input: RuntimeApprovalCommand,
+  deps: RuntimeDependencies = {}
+): Promise<RuntimeRun> {
+  const run = requireRun(state, runId);
+  const resolved = approvePendingApproval(run, {
+    approvalId: input.approvalId,
+    toolName: input.toolName,
+    actor: input.actor ?? "operator",
+    reason: input.reason
+  });
+  let nextRun = resolved.run;
+  state.runs.set(nextRun.id, nextRun);
+  emitNewEvents(run, nextRun, deps);
+
+  if (resolved.resumeReady && resolved.approval.action.name === EXTERNAL_OSINT_FETCH_TOOL) {
+    const fetched = fetchApprovedExternalOsint({
+      query: run.objective,
+      approval: resolved.approval,
+      runId: nextRun.id,
+      extraTags: ["runtime-resume"]
+    });
+    nextRun = completeApprovedExternalFetch(nextRun, fetched);
+    state.runs.set(nextRun.id, nextRun);
+    emit(
+      nextRun,
+      "external.fetch_succeeded",
+      `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 로컬 fetch 근거 ${fetched.length}건을 반영했습니다.`,
+      { toolName: EXTERNAL_OSINT_FETCH_TOOL, evidenceCount: fetched.length },
+      deps
+    );
+    emit(nextRun, "run.succeeded", `런타임 실행 상태: ${formatRunStatusKo(nextRun.status)}.`, undefined, deps);
+  }
+
+  return nextRun;
+}
+
+export function rejectRuntimeApproval(
+  state: RuntimeState,
+  runId: string,
+  input: RuntimeApprovalCommand,
+  deps: RuntimeDependencies = {}
+): RuntimeRun {
+  const run = requireRun(state, runId);
+  const resolved = rejectPendingApproval(run, {
+    approvalId: input.approvalId,
+    toolName: input.toolName,
+    actor: input.actor ?? "operator",
+    reason: input.reason
+  });
+  state.runs.set(resolved.run.id, resolved.run);
+  emitNewEvents(run, resolved.run, deps);
+  emit(resolved.run, "run.failed", resolved.run.error ?? "승인 거부로 런타임 실행이 실패했습니다.", undefined, deps);
+  return resolved.run;
 }
 
 export function createRuntimeRouter(
@@ -235,7 +332,9 @@ function updateRuntimeAnswer(run: RuntimeRun, latestTeamResult: TeamRunResult | 
     runStatus: run.status,
     teamResult: latestTeamResult,
     approvals: run.approvals,
-    modelResponses: run.modelResponses
+    modelResponses: run.modelResponses,
+    domainGrounding: run.outputs.domainGrounding,
+    fetchedEvidence: run.outputs.fetchedEvidence
   });
 }
 
@@ -290,8 +389,125 @@ function buildAnswerContext(run: RuntimeRun, latestTeamResult: TeamRunResult | u
     runStatus: run.status,
     teamResult: latestTeamResult,
     approvals: run.approvals,
-    modelResponses: run.modelResponses
+    modelResponses: run.modelResponses,
+    domainGrounding: run.outputs.domainGrounding,
+    fetchedEvidence: run.outputs.fetchedEvidence
   };
+}
+
+function attachDomainGrounding(run: RuntimeRun, deps: RuntimeDependencies): void {
+  const grounding = buildRuntimeDomainGrounding(run.objective);
+  if (!grounding) return;
+  run.outputs.domainGrounding = grounding;
+  emit(
+    run,
+    "domain.grounding",
+    `공급망 도메인 근거 ${grounding.evidence.length}건을 로컬 프로파일에서 검색했습니다.`,
+    {
+      domain: grounding.domain,
+      confidence: grounding.confidence,
+      evidenceCount: grounding.evidence.length,
+      queryTags: grounding.queryTags
+    },
+    deps
+  );
+}
+
+function buildRuntimeDomainGrounding(objective: string): RuntimeDomainGrounding | undefined {
+  const grounding = retrieveSupplyChainGrounding(objective, { limit: 4 });
+  if (!grounding.classification.isSupplyChainQuestion) return undefined;
+  return {
+    domain: grounding.classification.domain,
+    confidence: grounding.classification.confidence,
+    queryTags: grounding.classification.retrievalTags,
+    evidence: grounding.retrieval.items.map((item) => item.unit),
+    answerFrame: grounding.answerFrame
+      ? {
+          id: grounding.answerFrame.id,
+          intent: grounding.answerFrame.intent,
+          outline: grounding.answerFrame.outline
+        }
+      : undefined,
+    limits: grounding.profile.scope.limits,
+    warnings: grounding.retrieval.warnings
+  };
+}
+
+function requireRun(state: RuntimeState, runId: string): RuntimeRun {
+  const run = getRuntimeRun(state, runId);
+  if (!run) {
+    throw new Error(`런타임 실행을 찾을 수 없습니다: ${runId}`);
+  }
+  return run;
+}
+
+function completeApprovedExternalFetch(run: RuntimeRun, fetched: KnowledgeUnit[]): RuntimeRun {
+  const completedAt = nowIso();
+  const fetchedEvidence = [...(run.outputs.fetchedEvidence ?? []), ...fetched];
+  const previousAnswer = run.outputs.answer;
+  const nextRun: RuntimeRun = {
+    ...run,
+    status: "succeeded",
+    completedAt,
+    updatedAt: completedAt,
+    outputs: {
+      ...run.outputs,
+      fetchedEvidence
+    },
+    error: undefined
+  };
+  nextRun.outputs.answer = previousAnswer
+    ? {
+        ...previousAnswer,
+        evidenceUsed: uniqueNonEmpty([
+          ...previousAnswer.evidenceUsed,
+          ...fetched.flatMap((unit) =>
+            unit.claims
+              .slice(0, 1)
+              .map((claim) => `${claim.text} (${unit.sourceUri}, reliability=${unit.reliability ?? "unknown"})`)
+          )
+        ]),
+        uncertainty: uniqueNonEmpty([
+          ...previousAnswer.uncertainty.filter((item) => !item.includes("외부 OSINT 수집은 승인 전")),
+          "승인 후 외부 fetch 근거는 현재 deterministic local fixture입니다. 실제 웹 OSINT connector로 교체해야 합니다."
+        ]),
+        blockedActions: previousAnswer.blockedActions.filter((item) => !item.includes(EXTERNAL_OSINT_FETCH_TOOL)),
+        nextSteps: uniqueNonEmpty([
+          ...previousAnswer.nextSteps.filter((item) => !item.includes(`${EXTERNAL_OSINT_FETCH_TOOL} 승인`)),
+          "승인 후 추가 근거를 SourceVet과 ACH 재평가 입력으로 다시 투입해야 합니다."
+        ]),
+        authorityRefs: uniqueNonEmpty([
+          ...previousAnswer.authorityRefs,
+          `approvedExternalEvidence=${fetchedEvidence.length}`
+        ])
+      }
+    : composeDeterministicAnswer({
+        objective: nextRun.objective,
+        runStatus: nextRun.status,
+        approvals: nextRun.approvals,
+        modelResponses: nextRun.modelResponses,
+        domainGrounding: nextRun.outputs.domainGrounding,
+        fetchedEvidence
+      });
+  return nextRun;
+}
+
+function emitNewEvents(previousRun: RuntimeRun, nextRun: RuntimeRun, deps: RuntimeDependencies): void {
+  for (const event of nextRun.events.slice(previousRun.events.length)) {
+    deps.onEvent?.(event, nextRun);
+  }
+}
+
+function uniqueNonEmpty(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 }
 
 function loadRuntimeRemotes(): McpClient[] {
@@ -324,29 +540,6 @@ function summarizeRunForModel(run: RuntimeRun): unknown {
       risk: approval.decision.risk,
       tool: approval.action.name
     }))
-  };
-}
-
-function buildDeterministicRuntimeToolPlan(run: RuntimeRun, iteration: number): RoutedToolCall {
-  if (iteration === 1) {
-    return {
-      id: newId("rt_tool"),
-      toolName: "run_warden_team",
-      capability: "Hypothesis Analysis",
-      risk: "WRITE",
-      inputSummary: "런타임 MCP 라우터를 통해 WARDEN 전문 에이전트 팀을 실행합니다.",
-      requestedBy: "supervisor",
-      input: { objective: run.objective }
-    };
-  }
-  return {
-    id: newId("rt_tool"),
-    toolName: "external_osint_fetch",
-    capability: "RFI Watch",
-    risk: "EXTERNAL",
-    inputSummary: "플래너가 외부 OSINT 수집을 요청했으며 승인 대기가 필요합니다.",
-    requestedBy: "supervisor",
-    input: { query: "defense supply chain import drop public sources" }
   };
 }
 

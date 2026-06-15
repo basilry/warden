@@ -5,7 +5,13 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadWardenConfig, type WardenConfig } from "../agent/config.ts";
 import { loadDotEnvFile } from "../agent/env.ts";
-import { createRuntimeState, listRuntimeRuns, startRuntimeRun } from "../runtime/loop.ts";
+import {
+  approveRuntimeApproval,
+  createRuntimeState,
+  listRuntimeRuns,
+  rejectRuntimeApproval,
+  startRuntimeRun
+} from "../runtime/loop.ts";
 import type { RuntimeAnswerMode } from "../runtime/answer.ts";
 import { createWardenRuntimeServer, renderServerBanner } from "../runtime/server.ts";
 import type { RuntimeEvent, RuntimeRun, RuntimeState } from "../runtime/types.ts";
@@ -128,6 +134,14 @@ async function runChat(options: CliOptions): Promise<void> {
         printRunList(state);
         continue;
       }
+      if (line.startsWith("/approve")) {
+        await resolveApprovalCommand(line, "approve", state, config, options);
+        continue;
+      }
+      if (line.startsWith("/reject") || line.startsWith("/deny")) {
+        await resolveApprovalCommand(line, "reject", state, config, options);
+        continue;
+      }
       if (line === "/server") {
         output.write(`HTTP 런타임 서버를 시작하려면 ${color("warden server", "cyan")}를 실행하세요.\n`);
         continue;
@@ -204,6 +218,46 @@ async function runObjective(
   printRunResult(run);
 }
 
+async function resolveApprovalCommand(
+  line: string,
+  action: "approve" | "reject",
+  state: RuntimeState,
+  config: WardenConfig,
+  options: CliOptions
+): Promise<void> {
+  const token = line.split(/\s+/).filter(Boolean)[1];
+  const selector = selectorFromApprovalToken(token);
+  const run = findRunForApproval(state, selector);
+  const nextRun =
+    action === "approve"
+      ? await approveRuntimeApproval(
+          state,
+          run.id,
+          {
+            ...selector,
+            actor: "warden-cli",
+            reason: "CLI operator approved the pending runtime action."
+          },
+          { config, onEvent: options.json ? undefined : (event) => printRuntimeEvent(event, options) }
+        )
+      : rejectRuntimeApproval(
+          state,
+          run.id,
+          {
+            ...selector,
+            actor: "warden-cli",
+            reason: "CLI operator rejected the pending runtime action."
+          },
+          { config, onEvent: options.json ? undefined : (event) => printRuntimeEvent(event, options) }
+        );
+
+  if (options.json) {
+    printRunJson(nextRun);
+    return;
+  }
+  printRunResult(nextRun);
+}
+
 async function waitForRun(run: RuntimeRun): Promise<void> {
   while (run.status === "queued" || run.status === "running") {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
@@ -235,6 +289,11 @@ function printRuntimeEvent(event: RuntimeEvent, options: CliOptions): void {
     output.write(`${color("[모델]", "cyan")} ${label} 수신${from}${formatDurationSuffix(durationMs)}\n`);
     return;
   }
+  if (event.type === "domain.grounding") {
+    const evidenceCount = readEventNumber(event, "evidenceCount");
+    output.write(`${color("[도메인]", "mint")} ${event.message}${evidenceCount === undefined ? "" : ` (${evidenceCount}건)`}\n`);
+    return;
+  }
   if (event.type === "mcp.tool_start") {
     const toolName = readEventString(event, "toolName") ?? "tool";
     const risk = readEventString(event, "risk");
@@ -247,6 +306,14 @@ function printRuntimeEvent(event: RuntimeEvent, options: CliOptions): void {
   }
   if (event.type === "approval.pending") {
     output.write(`${color("[승인]", "yellow")} ${event.message}\n`);
+    return;
+  }
+  if (event.type === "approval.resolved" || event.type === "run.resume_ready") {
+    output.write(`${color("[승인]", "yellow")} ${event.message}\n`);
+    return;
+  }
+  if (event.type === "external.fetch_succeeded") {
+    output.write(`${color("[수집]", "aqua")} ${event.message}\n`);
     return;
   }
   if (event.type === "run.failed") {
@@ -384,7 +451,7 @@ function printWelcomeScreen(config: WardenConfig, options: CliOptions, state: Ru
     `${color("외부 호출", "gray")}: ${color("사람 승인 전까지 차단됩니다.", "yellow")}`
   ]);
   output.write("\n");
-  output.write(`${color("?", "aqua")} ${color("단축키", "gray")}  ${color("/runs", "aqua")} ${color("실행 목록", "gray")}  ${color("/exit", "aqua")} ${color("종료", "gray")}\n`);
+  output.write(`${color("?", "aqua")} ${color("단축키", "gray")}  ${color("/runs", "aqua")} ${color("실행 목록", "gray")}  ${color("/approve", "aqua")} ${color("승인", "gray")}  ${color("/exit", "aqua")} ${color("종료", "gray")}\n`);
 }
 
 function buildRuntimeRail(config: WardenConfig, options: CliOptions, state?: RuntimeState): string[] {
@@ -448,7 +515,7 @@ function writePanelBottom(width: number): void {
 
 function printChatHelp(): void {
   output.write("목표를 입력하고 enter를 누르세요.\n");
-  output.write("명령어: /runs 실행 목록, /server 서버 안내, /help 도움말, /exit 종료\n\n");
+  output.write("명령어: /runs 실행 목록, /approve [approvalId|toolName] 승인, /reject [approvalId|toolName] 거부, /server 서버 안내, /help 도움말, /exit 종료\n\n");
 }
 
 function printHelp(): void {
@@ -458,6 +525,9 @@ function printHelp(): void {
   output.write("  warden run \"<목표>\"            목표를 한 번 실행하고 종료\n");
   output.write("  warden \"<목표>\"                warden run과 동일\n");
   output.write("  warden server                  HTTP 런타임 서버 시작\n\n");
+  output.write("대화형 승인 명령:\n");
+  output.write("  /approve [approvalId|toolName] 승인 대기 도구를 승인하고 재개\n");
+  output.write("  /reject [approvalId|toolName]  승인 대기 도구를 거부하고 실행 실패 처리\n\n");
   output.write("옵션:\n");
   output.write("  --answer-mode <deterministic|assisted> 답변 생성 모드, 기본 WARDEN_ANSWER_MODE 또는 deterministic\n");
   output.write("  --json                         1회 실행 결과를 JSON으로 출력\n");
@@ -652,7 +722,8 @@ function formatRunStatusKo(status: string | undefined): string {
 function formatApprovalStatusKo(status: string): string {
   if (status === "pending") return "대기 중";
   if (status === "approved") return "승인됨";
-  if (status === "rejected") return "거부됨";
+  if (status === "denied" || status === "rejected") return "거부됨";
+  if (status === "expired") return "만료됨";
   return status;
 }
 
@@ -660,7 +731,40 @@ function translateReasonKo(reason: string): string {
   if (reason === "External calls are blocked until human approval.") {
     return "외부 호출은 사람의 승인이 있을 때까지 차단됩니다.";
   }
+  if (reason === "CLI operator approved the pending runtime action.") {
+    return "CLI 운영자가 승인했습니다.";
+  }
+  if (reason === "CLI operator rejected the pending runtime action.") {
+    return "CLI 운영자가 거부했습니다.";
+  }
   return reason;
+}
+
+function selectorFromApprovalToken(token: string | undefined): { approvalId?: string; toolName?: string } {
+  if (!token) return {};
+  return token.startsWith("approval_") || token.startsWith("approval-") ? { approvalId: token } : { toolName: token };
+}
+
+function findRunForApproval(
+  state: RuntimeState,
+  selector: { approvalId?: string; toolName?: string }
+): RuntimeRun {
+  const runs = listRuntimeRuns(state);
+  const matches = runs.filter((run) =>
+    run.approvals.some((approval) => {
+      if (approval.status !== "pending") return false;
+      if (selector.approvalId) return approval.id === selector.approvalId;
+      if (selector.toolName) return approval.action.name === selector.toolName;
+      return true;
+    })
+  );
+  if (matches.length === 0) {
+    throw new Error("승인 대기 중인 실행을 찾을 수 없습니다.");
+  }
+  if (matches.length > 1 && !selector.approvalId) {
+    throw new Error("승인 대기 실행이 여러 개입니다. /approve approvalId 형식으로 지정하세요.");
+  }
+  return matches[0];
 }
 
 function objectParticle(value: string): "을" | "를" {

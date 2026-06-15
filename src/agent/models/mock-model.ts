@@ -25,9 +25,12 @@ export function createMockModelAdapter(fixtures: MockModelFixtures = {}): ModelA
 function defaultOutput(request: ModelRequest): unknown {
   if (request.role === "planner") {
     return {
-      proposedCapability: "Hypothesis Analysis",
-      proposedSteps: ["ingest knowledge", "resolve capability", "run P0 team", "verify", "brief"],
-      externalActionSuggested: true
+      requestedTool: "run_warden_team",
+      capability: "Hypothesis Analysis",
+      risk: "WRITE",
+      inputSummary: "Run the WARDEN team through the policy-gated runtime router.",
+      input: { objective: readObjectiveFromContext(request.context) },
+      rationale: "Start with deterministic ACH team analysis before requesting external evidence."
     };
   }
   if (request.role === "briefing") {
@@ -39,6 +42,13 @@ function defaultOutput(request: ModelRequest): unknown {
     };
   }
   return { accepted: true, requestId: request.id };
+}
+
+function readObjectiveFromContext(context: unknown): string {
+  if (context && typeof context === "object" && "objective" in context && typeof context.objective === "string") {
+    return context.objective;
+  }
+  return "WARDEN runtime objective";
 }
 
 function estimateTokens(value: string): number {

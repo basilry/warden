@@ -29,6 +29,15 @@ warden server
 
 `warden` opens interactive chat mode. Each entered objective creates a local runtime run in the same process. `warden server` starts the HTTP runtime server described below.
 
+Interactive approval commands:
+
+```text
+/approve [approvalId|toolName]
+/reject [approvalId|toolName]
+```
+
+Use these in `warden` chat mode after a run stops at `waiting_approval`. One-shot `warden run` does not preserve process state after exit, so approval/resume belongs in chat mode or HTTP server mode.
+
 ## Environment
 
 WARDEN CLI/server processes automatically load `.env` from the project root when present. Create it from the example:
@@ -81,20 +90,42 @@ curl -sS http://127.0.0.1:8787/runs/<runId>
 - MCP tool call records
 - approval queue state
 - WARDEN team output summary
+- runtime answer with domain grounding and pending/approved evidence state
 
 Secrets and bearer tokens are redacted before returning run details.
+
+## Approve Or Reject
+
+Approve a pending external action and resume the run:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/approve \
+  -H 'content-type: application/json' \
+  -d '{"actor":"operator","reason":"approved"}'
+```
+
+Reject it:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/reject \
+  -H 'content-type: application/json' \
+  -d '{"actor":"operator","reason":"rejected"}'
+```
+
+Approved `external_osint_fetch` currently resumes with deterministic local fixture evidence. It does not perform a live web request.
 
 ## Loop Behavior
 
 Current runtime loop:
 
 1. Create a queued runtime run.
-2. Ask the configured model adapter for a planner proposal.
-3. Ignore direct tool execution from the model output.
-4. Build a deterministic WARDEN tool plan.
-5. Route the tool plan through policy and MCP router.
+2. Retrieve local Korea/Northeast Asia supply-chain grounding when the objective matches the domain classifier.
+3. Ask the configured model adapter for a planner proposal.
+4. Parse and validate the planner proposal against schema, capability allowlist, and blocked-risk rules.
+5. Route the selected or deterministic fallback tool plan through policy and MCP router.
 6. Run the internal WARDEN specialist team on the first iteration.
 7. Hold external OSINT-style action as `waiting_approval` on later iterations.
+8. On approval, attach deterministic local fetch evidence and clear the pending action.
 
 This means the model can propose, but it cannot execute tools directly or override ACH, SourceVet, verifier, policy, or approval controls.
 
@@ -164,7 +195,10 @@ Remote MCP tools must be allowlisted in config and still pass policy. External-r
 npm run build
 npm run demo:warden:cli
 npm run demo:warden:runtime
+npm run demo:warden:planner
+npm run demo:warden:approval-resume
+npm run demo:warden:domain
 npm test
 ```
 
-In restricted sandboxes, local port binding can require elevated execution. The runtime regression starts a local test server and checks `POST /runs`, polling, MCP tool events, model proposal events, and approval pending behavior.
+In restricted sandboxes, local port binding can require elevated execution. The runtime regression starts a local test server and checks `POST /runs`, polling, MCP tool events, model proposal events, approval pending behavior, and HTTP approval resume.

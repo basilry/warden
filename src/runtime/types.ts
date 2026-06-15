@@ -1,7 +1,22 @@
 import type { ApprovalRequest } from "../agent/approval.ts";
 import type { ModelResponse } from "../agent/model-adapter.ts";
 import type { ToolResult } from "../agent/mcp/types.ts";
+import type { KnowledgeUnit } from "../agent/types.ts";
 import type { RuntimeAnswer, RuntimeAnswerMode } from "./answer.ts";
+
+export type RuntimeDomainGrounding = {
+  domain: string;
+  confidence: number;
+  queryTags: string[];
+  evidence: KnowledgeUnit[];
+  answerFrame?: {
+    id: string;
+    intent: string;
+    outline: string[];
+  };
+  limits: string[];
+  warnings: string[];
+};
 
 export type RuntimeRunStatus = "queued" | "running" | "waiting_approval" | "succeeded" | "failed";
 
@@ -18,9 +33,13 @@ export type RuntimeEventType =
   | "loop.iteration"
   | "model.requested"
   | "model.proposal"
+  | "domain.grounding"
   | "mcp.tool_start"
   | "mcp.tool_call"
   | "approval.pending"
+  | "approval.resolved"
+  | "run.resume_ready"
+  | "external.fetch_succeeded"
   | "run.succeeded"
   | "run.failed";
 
@@ -62,6 +81,8 @@ export type RuntimeRun = {
     survivors?: string[];
     traceEvents?: number;
     answer?: RuntimeAnswer;
+    domainGrounding?: RuntimeDomainGrounding;
+    fetchedEvidence?: KnowledgeUnit[];
   };
   error?: string;
 };

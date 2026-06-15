@@ -1,0 +1,141 @@
+{
+  "profileId": "korea-northeast-asia-supply-chain-v1",
+  "version": "2026-06-15",
+  "title": "Korea and Northeast Asia Supply Chain Offline Grounding Profile",
+  "scope": {
+    "regions": ["south_korea", "northeast_asia", "china", "japan", "taiwan", "united_states", "global"],
+    "sectors": [
+      "semiconductor",
+      "battery",
+      "critical_minerals",
+      "defense",
+      "shipbuilding",
+      "energy",
+      "logistics",
+      "industrial",
+      "general"
+    ],
+    "limits": [
+      "This is a deterministic local fixture for grounding and regression tests.",
+      "It is not live OSINT and must not be presented as current external evidence.",
+      "Claims are intentionally generic and should be refreshed by approved retrieval before operational use."
+    ]
+  },
+  "sections": [
+    {
+      "id": "kor-nea-overview",
+      "title": "Regional supply-chain frame",
+      "summary": "South Korea's supply-chain exposure is best framed as a layered dependency across manufacturing capacity, upstream materials, logistics corridors, and technology-control regimes.",
+      "claims": [
+        {
+          "id": "claim-kor-nea-001",
+          "text": "대한민국 공급망 평가는 완제품 생산능력보다 상류 소재, 핵심 부품, 장비, 물류 경로, 수출통제 환경을 함께 보아야 한다.",
+          "reliability": "B2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "region:south_korea", "region:northeast_asia", "sector:general", "intent:overview"]
+        },
+        {
+          "id": "claim-kor-nea-002",
+          "text": "동북아 공급망은 한국, 중국, 일본, 대만, 미국 기술통제 및 글로벌 해상 물류가 결합된 다층 네트워크로 취급해야 한다.",
+          "reliability": "B2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "region:northeast_asia", "region:china", "region:japan", "region:taiwan", "region:united_states", "sector:general"]
+        }
+      ]
+    },
+    {
+      "id": "semiconductor-electronics",
+      "title": "Semiconductor and electronics exposure",
+      "summary": "Semiconductor questions should separate design, fabrication, equipment, materials, packaging, and export-control exposure.",
+      "claims": [
+        {
+          "id": "claim-semi-001",
+          "text": "반도체 공급망 리스크는 제조라인 자체보다 장비, 공정 소재, 패키징, 고성능 연산칩 접근성, 수출통제 규칙의 결합으로 확대될 수 있다.",
+          "reliability": "B2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "sector:semiconductor", "sector:industrial", "risk:export_controls", "risk:technology_controls"]
+        },
+        {
+          "id": "claim-semi-002",
+          "text": "대만 관련 지정학 리스크는 반도체 수급, 해상 운송, 동북아 생산계획의 동시 충격 시나리오로 모델링해야 한다.",
+          "reliability": "C2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "region:taiwan", "region:northeast_asia", "sector:semiconductor", "sector:logistics", "risk:logistics_disruption"]
+        }
+      ]
+    },
+    {
+      "id": "battery-critical-minerals",
+      "title": "Battery and critical minerals exposure",
+      "summary": "Battery supply chains require upstream mineral dependency and processing concentration checks before downstream production conclusions.",
+      "claims": [
+        {
+          "id": "claim-batt-001",
+          "text": "배터리 공급망은 리튬, 니켈, 코발트, 흑연 등 핵심광물과 전구체, 양극재, 음극재 가공 집중도를 분리해 평가해야 한다.",
+          "reliability": "B2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "sector:battery", "sector:critical_minerals", "risk:single_point_dependency"]
+        },
+        {
+          "id": "claim-batt-002",
+          "text": "핵심광물 공급망에서는 특정 국가 의존도, 재고 비축, 장기 구매계약, 대체 소재 가능성이 주요 점검 축이다.",
+          "reliability": "B3",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "sector:critical_minerals", "risk:stockpiling", "risk:single_point_dependency", "intent:risk_assessment"]
+        }
+      ]
+    },
+    {
+      "id": "defense-industrial-base",
+      "title": "Defense industrial base dependencies",
+      "summary": "Defense supply-chain work should distinguish military end-items from dual-use subcomponents and civilian industrial chokepoints.",
+      "claims": [
+        {
+          "id": "claim-defense-001",
+          "text": "방산 공급망은 군수 완제품뿐 아니라 민군 겸용 전자부품, 특수 소재, 정밀가공 장비, 인증 시험 인프라를 함께 추적해야 한다.",
+          "reliability": "B2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "sector:defense", "sector:industrial", "risk:single_point_dependency"]
+        },
+        {
+          "id": "claim-defense-002",
+          "text": "제재 또는 수출통제 회피 가능성을 볼 때는 제3국 경유 물동량, 대체 공급자 급부상, 품목 코드 변경을 별도 지표로 분리해야 한다.",
+          "reliability": "B3",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "sector:defense", "risk:sanctions", "risk:export_controls", "risk:logistics_disruption", "intent:scenario_monitoring"]
+        }
+      ]
+    },
+    {
+      "id": "logistics-chokepoints",
+      "title": "Logistics and chokepoints",
+      "summary": "Logistics risk should combine port throughput, shipping reliability, chokepoints, insurance friction, and customs processing indicators.",
+      "claims": [
+        {
+          "id": "claim-log-001",
+          "text": "동북아 공급망의 물류 리스크는 항만 처리, 해상 운임, 통관 지연, 특정 해역 긴장, 보험 비용 변화를 함께 보는 방식이 적합하다.",
+          "reliability": "B2",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "region:northeast_asia", "sector:logistics", "risk:logistics_disruption", "intent:chokepoint_analysis"]
+        },
+        {
+          "id": "claim-log-002",
+          "text": "공급망 병목 분석은 단일 항만 또는 단일 기업보다 대체 경로, 재고 완충, 운송 리드타임 변동을 비교해야 한다.",
+          "reliability": "B3",
+          "tags": ["domain:defense_supply_chain", "topic:supply_chain", "sector:logistics", "risk:stockpiling", "risk:logistics_disruption", "intent:chokepoint_analysis"]
+        }
+      ]
+    }
+  ],
+  "answerFrames": [
+    {
+      "id": "frame-overview",
+      "intent": "overview",
+      "outline": [
+        "범위: 한국/동북아 공급망은 산업별 상류 소재, 핵심 부품, 장비, 물류, 정책통제 층으로 나누어 본다.",
+        "핵심 판단: 단일 원인보다 소재/부품 의존도, 수출통제, 물류 병목, 비축 상태의 결합 리스크가 중요하다.",
+        "한계: 이 profile은 local fixture이며 live OSINT 승인 전에는 최신 사건 근거로 쓰지 않는다."
+      ]
+    },
+    {
+      "id": "frame-risk",
+      "intent": "risk_assessment",
+      "outline": [
+        "리스크 축: 단일 공급 의존, 제재/수출통제, 물류 차질, 가격 급등, 수요 충격.",
+        "관찰 지표: 수입량 급감, 제3국 경유 물동량 증가, 재고/비축 발언, 품목 코드 변경, 대체 공급자 급부상.",
+        "검증: SourceVet과 승인된 외부 수집으로 각 지표의 독립 출처를 확인해야 한다."
+      ]
+    }
+  ]
+}

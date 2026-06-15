@@ -32,6 +32,22 @@ try {
   assertAtLeast(run.events.filter((event: { type: string }) => event.type === "model.proposal").length, 1, "model proposal events");
   assertAtLeast(run.events.filter((event: { type: string }) => event.type === "mcp.tool_call").length, 1, "mcp tool call events");
 
+  const approvalId = run.approvals[0]?.id;
+  if (!approvalId) {
+    throw new Error("runtime run did not expose approval id");
+  }
+  const resumed = await fetchJson(`${baseUrl}/runs/${runId}/approvals/${approvalId}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actor: "runtime-regression",
+      reason: "Runtime server regression approval."
+    })
+  });
+  assertEqual(resumed.status, "succeeded", "resumed runtime status");
+  assertAtLeast(resumed.outputs.fetchedEvidence?.length ?? 0, 1, "resumed fetched evidence count");
+  assertEqual(resumed.outputs.answer.blockedActions.length, 0, "resumed blocked action count");
+
   console.log("Runtime server regression: passed");
 } finally {
   server.close();

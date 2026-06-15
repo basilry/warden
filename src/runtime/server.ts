@@ -1,7 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { loadWardenConfig, type WardenConfig } from "../agent/config.ts";
 import { redactPayload } from "../agent/security/redaction.ts";
-import { createRuntimeState, getRuntimeRun, listRuntimeRuns, startRuntimeRun, type RuntimeDependencies } from "./loop.ts";
+import {
+  approveRuntimeApproval,
+  createRuntimeState,
+  getRuntimeRun,
+  listRuntimeRuns,
+  rejectRuntimeApproval,
+  startRuntimeRun,
+  type RuntimeDependencies
+} from "./loop.ts";
 import type { RuntimeEvent, RuntimeRunRequest, RuntimeState } from "./types.ts";
 
 export type RuntimeServerOptions = {
@@ -48,6 +56,8 @@ async function routeRequest(
         createRun: "POST /runs",
         listRuns: "GET /runs",
         getRun: "GET /runs/:id",
+        approve: "POST /runs/:id/approvals/:approvalId/approve",
+        reject: "POST /runs/:id/approvals/:approvalId/reject",
         health: "GET /healthz"
       }
     });
@@ -80,6 +90,36 @@ async function routeRequest(
     return;
   }
 
+  const approvalMatch = url.pathname.match(/^\/runs\/([^/]+)\/approvals\/([^/]+)\/(approve|reject|deny)$/);
+  if (request.method === "POST" && approvalMatch) {
+    const body = await readJsonBody<{ actor?: string; reason?: string }>(request);
+    const [, runId, approvalId, action] = approvalMatch;
+    const run =
+      action === "approve"
+        ? await approveRuntimeApproval(
+            state,
+            runId,
+            {
+              approvalId,
+              actor: body?.actor ?? "warden-server",
+              reason: body?.reason ?? "HTTP operator approved the pending runtime action."
+            },
+            deps
+          )
+        : rejectRuntimeApproval(
+            state,
+            runId,
+            {
+              approvalId,
+              actor: body?.actor ?? "warden-server",
+              reason: body?.reason ?? "HTTP operator rejected the pending runtime action."
+            },
+            deps
+          );
+    sendJson(response, 200, redactPayload(run));
+    return;
+  }
+
   sendJson(response, 404, { error: "경로를 찾을 수 없습니다." });
 }
 
@@ -91,9 +131,18 @@ function summarizeRun(run: ReturnType<typeof listRuntimeRuns>[number]): unknown 
     iteration: run.iteration,
     maxIterations: run.maxIterations,
     approvals: run.approvals.length,
+    pendingApprovals: run.approvals.filter((approval) => approval.status === "pending").length,
     teamRunId: run.outputs.teamRunId,
     teamStatus: run.outputs.teamStatus,
     survivors: run.outputs.survivors,
+    domainGrounding: run.outputs.domainGrounding
+      ? {
+          domain: run.outputs.domainGrounding.domain,
+          confidence: run.outputs.domainGrounding.confidence,
+          evidence: run.outputs.domainGrounding.evidence.length
+        }
+      : undefined,
+    fetchedEvidence: run.outputs.fetchedEvidence?.length ?? 0,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt
   };
@@ -135,6 +184,11 @@ export function renderServerBanner(port: number, config: WardenConfig): string {
     "",
     "실행 목록 확인:",
     `curl -sS http://127.0.0.1:${port}/runs`,
+    "",
+    "승인 후 재개:",
+    `curl -sS -X POST http://127.0.0.1:${port}/runs/<runId>/approvals/<approvalId>/approve \\`,
+    "  -H 'content-type: application/json' \\",
+    "  -d '{\"actor\":\"operator\",\"reason\":\"approved\"}'",
     ""
   ].join("\n");
 }
@@ -145,9 +199,13 @@ function formatEventTypeKo(type: RuntimeEvent["type"]): string {
   if (type === "loop.iteration") return "루프";
   if (type === "model.requested") return "모델요청";
   if (type === "model.proposal") return "모델응답";
+  if (type === "domain.grounding") return "도메인";
   if (type === "mcp.tool_start") return "도구시작";
   if (type === "mcp.tool_call") return "도구결과";
   if (type === "approval.pending") return "승인대기";
+  if (type === "approval.resolved") return "승인처리";
+  if (type === "run.resume_ready") return "재개준비";
+  if (type === "external.fetch_succeeded") return "외부수집";
   if (type === "run.succeeded") return "실행성공";
   if (type === "run.failed") return "실행실패";
   return type;

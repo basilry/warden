@@ -30,7 +30,7 @@ warden
 ╭─ WARDEN CLI Runtime v0.1.0 ───────────────────────────────────────╮
 │ ▼ WARDEN                 │ Agent runtime console                  │
 │                          │ 경로: ~/Projects/02021_warden_agents   │
-│ Session                  │ 명령어: /runs · /server · /help · /exit │
+│ Session                  │ 명령어: /runs · /approve · /server · /help · /exit │
 │ Model     mock           │ 최근 활동: 최근 실행 없음              │
 │ Server    ready          │ .env: 사용 중                          │
 │ Policy    guarded        │ 권한 경계: 오프라인/로컬               │
@@ -61,7 +61,7 @@ warden
 - 공급망 교란: 현재 ACH 생존 가설입니다.
 
 승인 필요
-- external_osint_fetch: External calls are blocked until human approval. (EXTERNAL)
+- external_osint_fetch: 외부 호출은 사람의 승인이 있을 때까지 차단됩니다. (EXTERNAL)
 
 상태: 승인 대기
 ```
@@ -83,6 +83,14 @@ warden run "대한민국 및 동북아 공급망에 대해 알려줘" --answer-m
 ```bash
 warden run "대한민국 및 동북아 공급망에 대해 알려줘" --json
 ```
+
+대화형 모드에서 승인 대기 run을 재개하려면:
+
+```text
+/approve external_osint_fetch
+```
+
+`warden run` 1회 실행은 상태를 유지하지 않고 종료되므로 승인 후 재개가 필요하면 `warden` 대화형 모드나 `warden server`를 사용합니다.
 
 HTTP runtime server를 직접 띄우려면:
 
@@ -111,7 +119,15 @@ curl -sS http://127.0.0.1:8787/runs
 curl -sS http://127.0.0.1:8787/runs/<runId>
 ```
 
-기본 경로는 offline-first입니다. live LLM, live MCP, 외부 네트워크 없이 mock model proposal, policy gate, WARDEN internal MCP-style tool, approval queue까지 검증합니다. 정적 HTML report는 기본 실행 경로가 아니라 `npm run demo:warden:report`로 생성하는 선택 산출물입니다.
+승인 대기 중인 외부 fetch를 승인하고 run을 재개합니다.
+
+```bash
+curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/approve \
+  -H 'content-type: application/json' \
+  -d '{"actor":"operator","reason":"approved"}'
+```
+
+기본 경로는 offline-first입니다. live LLM, live MCP, 외부 네트워크 없이 mock model proposal, policy gate, WARDEN internal MCP-style tool, approval queue, 승인 후 deterministic fetch fixture까지 검증합니다. 정적 HTML report는 기본 실행 경로가 아니라 `npm run demo:warden:report`로 생성하는 선택 산출물입니다.
 
 ## Main Commands
 
@@ -122,6 +138,8 @@ curl -sS http://127.0.0.1:8787/runs/<runId>
 | `warden run "<objective>"` | objective 1회 실행 |
 | `warden run "<objective>" --answer-mode assisted` | 모델 보조 답변 초안 포함 |
 | `warden run "<objective>" --json` | answer object 포함 JSON 출력 |
+| `/approve [approvalId\|toolName]` | 대화형 CLI에서 승인 대기 action 승인 후 재개 |
+| `/reject [approvalId\|toolName]` | 대화형 CLI에서 승인 대기 action 거부 |
 | `warden server` | HTTP runtime server 실행 |
 | `npm start` | WARDEN Agent Runtime Server 실행 |
 | `npm run server` | `npm start`와 동일 |
@@ -129,6 +147,9 @@ curl -sS http://127.0.0.1:8787/runs/<runId>
 | `npm run demo:warden:cli` | CLI regression |
 | `npm run demo:warden:answer` | CLI answer regression |
 | `npm run demo:warden:runtime` | runtime server API regression |
+| `npm run demo:warden:planner` | planner proposal validation regression |
+| `npm run demo:warden:approval-resume` | approval approve/reject/resume regression |
+| `npm run demo:warden:domain` | Korea/Northeast Asia supply-chain grounding regression |
 | `npm run demo:warden` | P0 specialist team demo |
 | `npm run demo:warden:p1` | job, approval, model boundary, knowledge store demo |
 | `npm run demo:warden:sourcevet` | SourceVet 출처 검증 포함 demo |
@@ -152,6 +173,8 @@ warden server
 채팅 모드 명령:
 
 - `/runs`: 현재 CLI 세션의 run 목록
+- `/approve [approvalId|toolName]`: 승인 대기 action 승인 및 deterministic resume
+- `/reject [approvalId|toolName]`: 승인 대기 action 거부 및 failed 처리
 - `/server`: HTTP server 실행 명령 안내
 - `/help`: 도움말
 - `/exit`: 종료
@@ -169,13 +192,16 @@ warden server
 | `POST /runs` | objective 기반 agent loop 생성 |
 | `GET /runs` | run summary 목록 |
 | `GET /runs/:id` | run event, model proposal, tool result, approval 상태 |
+| `POST /runs/:id/approvals/:approvalId/approve` | 승인 대기 action 승인 후 deterministic resume |
+| `POST /runs/:id/approvals/:approvalId/reject` | 승인 대기 action 거부 |
 
 현재 loop 동작:
 
-- Supervisor runtime loop가 model adapter에 planner proposal을 요청합니다.
-- 1회차에는 `run_warden_team` capability를 MCP router/policy gate를 통해 실행합니다.
+- Supervisor runtime loop가 model adapter에 planner proposal을 요청하고 allowlist/schema 검증을 통과한 proposal만 tool plan으로 승격합니다.
+- 1회차에는 승인된 proposal 또는 deterministic fallback으로 `run_warden_team` capability를 MCP router/policy gate를 통해 실행합니다.
 - 내부 WARDEN specialist team이 ACH, SourceVet, verifier trace를 생성합니다.
 - 2회차 이후 외부 OSINT 성격의 `external_osint_fetch`는 자동 실행하지 않고 approval pending으로 남깁니다.
+- 승인 후 재개는 현재 실제 네트워크가 아니라 deterministic local fetch fixture를 반영합니다. 실제 웹 OSINT connector는 별도 allowlist와 SourceVet 재평가가 필요합니다.
 - 모델 출력은 실행 권한이 아니라 proposal로만 저장됩니다.
 
 런타임 smoke test:

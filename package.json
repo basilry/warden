@@ -25,9 +25,12 @@
     "demo:warden:answer": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-answer-regression.ts",
     "demo:warden:runtime": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-runtime-regression.ts",
     "demo:warden:regression": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-regression.ts",
+    "demo:warden:planner": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-planner-regression.ts",
+    "demo:warden:approval-resume": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-approval-resume-regression.ts",
+    "demo:warden:domain": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-domain-regression.ts",
     "submission:verify": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/build-submission-package.ts --verify-only",
     "submission:package": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/build-submission-package.ts",
-    "test": "npm run build && npm run demo:warden:regression && npm run demo:warden:storage-regression && npm run demo:warden:codex-regression && npm run demo:warden:env-regression && npm run demo:warden:p5-regression && npm run demo:warden:runtime && npm run demo:warden:cli && npm run demo:warden:answer"
+    "test": "npm run build && npm run demo:warden:regression && npm run demo:warden:storage-regression && npm run demo:warden:codex-regression && npm run demo:warden:env-regression && npm run demo:warden:p5-regression && npm run demo:warden:runtime && npm run demo:warden:cli && npm run demo:warden:answer && npm run demo:warden:planner && npm run demo:warden:approval-resume && npm run demo:warden:domain"
   },
   "keywords": [
     "agent-harness",

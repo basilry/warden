@@ -5,8 +5,8 @@ import {
   type ModelRequest,
   type ModelResponse
 } from "../agent/model-adapter.ts";
-import type { TeamRunResult, VerificationReport } from "../agent/types.ts";
-import type { RuntimeRunStatus } from "./types.ts";
+import type { Evidence, KnowledgeUnit, TeamRunResult, VerificationReport } from "../agent/types.ts";
+import type { RuntimeDomainGrounding, RuntimeRunStatus } from "./types.ts";
 
 export type RuntimeAnswerMode = "deterministic" | "assisted";
 
@@ -40,6 +40,8 @@ export type AnswerContext = {
   teamResult?: TeamRunResult;
   approvals: ApprovalRequest[];
   modelResponses: ModelResponse[];
+  domainGrounding?: RuntimeDomainGrounding;
+  fetchedEvidence?: KnowledgeUnit[];
 };
 
 export function composeDeterministicAnswer(context: AnswerContext): RuntimeAnswer {
@@ -49,15 +51,20 @@ export function composeDeterministicAnswer(context: AnswerContext): RuntimeAnswe
   const pendingApprovals = context.approvals.filter((approval) => approval.status === "pending");
   const survivors = ach?.survivors ?? [];
   const evidence = ach?.caseRecord.evidence ?? [];
+  const fetchedEvidence = context.fetchedEvidence ?? [];
+  const domainEvidence = context.domainGrounding?.evidence ?? [];
 
   const keyFindings =
     ach && survivors.length > 0
-      ? ach.ranked
-          .filter((score) => score.status === "survivor")
-          .map(
-            (score) =>
-              `${score.hypothesis}: 현재 ACH 생존 가설입니다. support=${score.support}, contradictions=${score.contradictions}.`
-          )
+      ? [
+          ...ach.ranked
+            .filter((score) => score.status === "survivor")
+            .map(
+              (score) =>
+                `${score.hypothesis}: 현재 ACH 생존 가설입니다. support=${score.support}, contradictions=${score.contradictions}.`
+            ),
+          ...buildDomainFindings(context.domainGrounding)
+        ]
       : ["아직 검증된 생존 가설이 없습니다. 먼저 분석 팀 실행 결과가 필요합니다."];
 
   const uncertainty = [
@@ -65,21 +72,23 @@ export function composeDeterministicAnswer(context: AnswerContext): RuntimeAnswe
       ? verification?.residualRisk ?? []
       : ["현재 답변은 WARDEN 로컬 분석 결과에 제한됩니다."]),
     ...(sourceReview?.flags.map((flag) => `SourceVet ${flag.severity}: ${flag.summary}`) ?? []),
-    ...(pendingApprovals.length > 0 ? ["외부 OSINT 수집은 승인 전이라 답변 근거에 반영되지 않았습니다."] : [])
+    ...(context.domainGrounding?.limits.map((limit) => `도메인 프로파일 한계: ${limit}`) ?? []),
+    ...(context.domainGrounding?.warnings.map((warning) => `도메인 근거 주의: ${warning}`) ?? []),
+    ...(pendingApprovals.length > 0 ? ["외부 OSINT 수집은 승인 전이라 답변 근거에 반영되지 않았습니다."] : []),
+    ...(fetchedEvidence.length > 0
+      ? ["승인 후 외부 fetch 근거는 현재 deterministic local fixture입니다. 실제 웹 OSINT connector로 교체해야 합니다."]
+      : [])
   ];
 
   return {
     mode: "deterministic",
     title: context.objective,
-    directAnswer: buildDirectAnswer(context.objective, survivors, pendingApprovals.length),
+    directAnswer: buildDirectAnswer(context.objective, survivors, pendingApprovals.length, context.domainGrounding),
     keyFindings,
-    evidenceUsed:
-      evidence.length > 0
-        ? evidence.slice(0, 5).map((item) => `${item.text} (${item.source}, reliability=${item.reliability})`)
-        : ["아직 답변에 사용할 구조화 evidence가 없습니다."],
+    evidenceUsed: buildEvidenceUsed(evidence, domainEvidence, fetchedEvidence),
     uncertainty: uniqueNonEmpty(uncertainty),
     blockedActions: pendingApprovals.map(
-      (approval) => `${approval.action.name}: ${approval.reason} (${approval.decision.risk})`
+      (approval) => `${approval.action.name}: ${translateApprovalReasonKo(approval.reason)} (${approval.decision.risk})`
     ),
     nextSteps: buildNextSteps(ach?.rfi, pendingApprovals),
     authorityRefs: buildAuthorityRefs(context),
@@ -263,7 +272,12 @@ function verificationResidualRisk(verification: VerificationReport | undefined):
   return verification?.residualRisk ?? [];
 }
 
-function buildDirectAnswer(objective: string, survivors: string[], pendingApprovalCount: number): string {
+function buildDirectAnswer(
+  objective: string,
+  survivors: string[],
+  pendingApprovalCount: number,
+  grounding?: RuntimeDomainGrounding
+): string {
   if (survivors.length === 0) {
     return [
       `질문 "${objective}"에 대해 아직 확정 가능한 WARDEN 분석 결과가 없습니다.`,
@@ -272,6 +286,9 @@ function buildDirectAnswer(objective: string, survivors: string[], pendingApprov
   }
 
   const survivorText = survivors.join(", ");
+  const domainText = grounding
+    ? `P10 도메인 근거는 ${formatDomainKo(grounding.domain)}로 분류되었고 confidence=${grounding.confidence.toFixed(2)}입니다.`
+    : "";
   const approvalText =
     pendingApprovalCount > 0
       ? "다만 외부 정보 수집은 승인 대기 상태라, 현재 답변은 로컬/fixture 기반 근거에 한정됩니다."
@@ -279,9 +296,12 @@ function buildDirectAnswer(objective: string, survivors: string[], pendingApprov
 
   return [
     `질문 "${objective}"에 대해 WARDEN의 현재 통제 분석에서는 ${survivorText} 가설이 생존했습니다.`,
+    domainText,
     "이는 확정 결론이 아니라 ACH, 정책 게이트, 검증자가 허용한 범위의 중간 분석입니다.",
     approvalText
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function buildNextSteps(rfi: string | undefined, pendingApprovals: ApprovalRequest[]): string[] {
@@ -299,6 +319,9 @@ function buildAuthorityRefs(context: AnswerContext): string[] {
     team?.outputs.ach ? `achCase=${team.outputs.ach.caseId}` : undefined,
     team?.outputs.verification ? `verification=${team.outputs.verification.status}` : undefined,
     team ? `traceEvents=${team.trace.length}` : undefined,
+    context.domainGrounding ? `domain=${context.domainGrounding.domain}` : undefined,
+    context.domainGrounding ? `domainEvidence=${context.domainGrounding.evidence.length}` : undefined,
+    context.fetchedEvidence?.length ? `approvedExternalEvidence=${context.fetchedEvidence.length}` : undefined,
     context.modelResponses.length > 0 ? `modelProposals=${context.modelResponses.length}` : undefined
   ]);
 }
@@ -314,6 +337,34 @@ function buildWarnings(context: AnswerContext): string[] {
   return uniqueNonEmpty(warnings);
 }
 
+function buildDomainFindings(grounding: RuntimeDomainGrounding | undefined): string[] {
+  if (!grounding) return [];
+  return [
+    `도메인 근거: ${formatDomainKo(grounding.domain)} 질문으로 분류되었고, 로컬 프로파일 근거 ${grounding.evidence.length}건이 검색되었습니다.`
+  ];
+}
+
+function buildEvidenceUsed(
+  achEvidence: Evidence[],
+  domainEvidence: RuntimeDomainGrounding["evidence"],
+  fetchedEvidence: KnowledgeUnit[]
+): string[] {
+  const values = uniqueNonEmpty([
+    ...achEvidence.slice(0, 4).map((item) => `${item.text} (${item.source}, reliability=${item.reliability})`),
+    ...domainEvidence
+      .slice(0, 4)
+      .flatMap((unit) =>
+        unit.claims.slice(0, 1).map((claim) => `${claim.text} (${unit.sourceUri}, reliability=${unit.reliability ?? "unknown"})`)
+      ),
+    ...fetchedEvidence
+      .slice(0, 4)
+      .flatMap((unit) =>
+        unit.claims.slice(0, 1).map((claim) => `${claim.text} (${unit.sourceUri}, reliability=${unit.reliability ?? "unknown"})`)
+      )
+  ]);
+  return values.length > 0 ? values : ["아직 답변에 사용할 구조화 evidence가 없습니다."];
+}
+
 function uniqueNonEmpty(values: Array<string | undefined>): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -324,4 +375,16 @@ function uniqueNonEmpty(values: Array<string | undefined>): string[] {
     result.push(trimmed);
   }
   return result;
+}
+
+function translateApprovalReasonKo(reason: string | undefined): string {
+  if (reason === "External calls are blocked until human approval.") {
+    return "외부 호출은 사람의 승인이 있을 때까지 차단됩니다.";
+  }
+  return reason ?? "승인 사유가 기록되지 않았습니다.";
+}
+
+function formatDomainKo(domain: string): string {
+  if (domain === "defense_supply_chain") return "방산/전략 공급망(defense_supply_chain)";
+  return domain;
 }
