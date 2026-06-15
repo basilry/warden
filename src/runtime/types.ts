@@ -1,7 +1,9 @@
 import type { ApprovalRequest } from "../agent/approval.ts";
 import type { ModelResponse } from "../agent/model-adapter.ts";
 import type { ToolResult } from "../agent/mcp/types.ts";
-import type { KnowledgeUnit } from "../agent/types.ts";
+import type { SourceReview } from "../agent/sourcevet-types.ts";
+import type { AchAnalysisResult, CaseFrame, EvidenceBundle, KnowledgeUnit } from "../agent/types.ts";
+import type { OsintStoredArtifact } from "../connectors/osint/types.ts";
 import type { RuntimeAnswer, RuntimeAnswerMode } from "./answer.ts";
 
 export type RuntimeDomainGrounding = {
@@ -16,6 +18,24 @@ export type RuntimeDomainGrounding = {
   };
   limits: string[];
   warnings: string[];
+};
+
+export type RuntimeResumeResult = {
+  approvalId: string;
+  fetchMode: "fixture" | "live-osint";
+  fetchedUnits: KnowledgeUnit[];
+  promotedBundles: EvidenceBundle[];
+  rejectedUnits: string[];
+  osintArtifacts?: OsintStoredArtifact[];
+  fetchWarnings?: string[];
+  sourceReview?: SourceReview;
+  achBefore?: AchAnalysisResult;
+  achAfter?: AchAnalysisResult;
+  survivorDelta: {
+    added: string[];
+    removed: string[];
+    unchanged: string[];
+  };
 };
 
 export type RuntimeRunStatus = "queued" | "running" | "waiting_approval" | "succeeded" | "failed";
@@ -83,6 +103,12 @@ export type RuntimeRun = {
     answer?: RuntimeAnswer;
     domainGrounding?: RuntimeDomainGrounding;
     fetchedEvidence?: KnowledgeUnit[];
+    caseFrame?: CaseFrame;
+    knowledgeUnits?: KnowledgeUnit[];
+    evidenceBundles?: EvidenceBundle[];
+    ach?: AchAnalysisResult;
+    sourceReview?: SourceReview;
+    resumeResult?: RuntimeResumeResult;
   };
   error?: string;
 };

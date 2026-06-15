@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "sources": [
+    {
+      "id": "warden-sample-osint",
+      "name": "WARDEN sample OSINT JSON fixture endpoint",
+      "url": "https://osint.example.test/warden/supply-chain/sample.json",
+      "enabled": true,
+      "allowedDomains": ["osint.example.test"],
+      "allowedPaths": ["/warden/supply-chain/"],
+      "method": "GET",
+      "contentType": "json",
+      "tags": ["supply-chain", "sample-connector"]
+    }
+  ]
+}

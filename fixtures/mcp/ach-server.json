@@ -1,0 +1,18 @@
+{
+  "mode": "stdio",
+  "enabled": true,
+  "allowlist": ["open_case", "add_evidence", "assess", "rank_hypotheses"],
+  "servers": [
+    {
+      "id": "ach-mcp",
+      "mode": "stdio",
+      "enabled": true,
+      "command": "node",
+      "args": ["--disable-warning=ExperimentalWarning", "--experimental-strip-types", "src/mcp/ach/stdio-server.ts"],
+      "allowTools": ["open_case", "add_evidence", "assess", "rank_hypotheses"],
+      "commandAllowlist": ["node"],
+      "timeoutMs": 5000,
+      "risk": "WRITE"
+    }
+  ]
+}

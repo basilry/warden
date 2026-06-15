@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { loadDotEnvFile } from "./env.ts";
+import type { OsintConnectorConfig } from "../connectors/osint/types.ts";
 import type { StorageProviderKind } from "./storage/types.ts";
 
 export type ModelProviderKind = "mock" | "openai-compatible" | "codex" | "local";
@@ -7,31 +8,32 @@ export type ModelProviderKind = "mock" | "openai-compatible" | "codex" | "local"
 export type WardenConfig = {
   model: {
     provider: ModelProviderKind;
-      openaiCompatible: {
-        endpoint: string;
-        model: string;
-        apiKeyEnv: string;
-        dryRun: boolean;
-        liveOptIn: boolean;
-      };
-      codex: {
+    openaiCompatible: {
+      endpoint: string;
+      model: string;
+      apiKeyEnv: string;
+      dryRun: boolean;
+      liveOptIn: boolean;
+    };
+    codex: {
       command: string;
       model?: string;
       dryRun: boolean;
       timeoutMs: number;
       sandbox: "read-only" | "workspace-write" | "danger-full-access";
-        cwd: string;
-      };
-      local: {
-        endpoint?: string;
-        model: string;
-        dryRun: boolean;
-      };
+      cwd: string;
+    };
+    local: {
+      endpoint?: string;
+      model: string;
+      dryRun: boolean;
+    };
   };
   storage: {
     kind: StorageProviderKind;
     rootDir: string;
   };
+  osint: OsintConnectorConfig;
 };
 
 export function loadWardenConfig(
@@ -69,6 +71,13 @@ export function loadWardenConfig(
     storage: {
       kind: parseStorageProviderKind(sourceEnv.WARDEN_STORAGE ?? "memory"),
       rootDir: resolve(cwd, sourceEnv.WARDEN_STORAGE_DIR ?? "data")
+    },
+    osint: {
+      liveOptIn: parseBoolean(sourceEnv.WARDEN_OSINT_LIVE_OPT_IN, false),
+      allowlistPath: resolve(cwd, sourceEnv.WARDEN_OSINT_ALLOWLIST ?? "fixtures/osint/allowlist.json"),
+      timeoutMs: parsePositiveInteger(sourceEnv.WARDEN_OSINT_TIMEOUT_MS, 8000),
+      maxResults: parseBoundedPositiveInteger(sourceEnv.WARDEN_OSINT_MAX_RESULTS, 5, 1, 25),
+      userAgent: sourceEnv.WARDEN_OSINT_USER_AGENT ?? "WARDEN-Agent/0.1 live-osint-guard"
     }
   };
 }
@@ -99,6 +108,19 @@ function parsePositiveInteger(value: string | undefined, defaultValue: number): 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`Expected positive integer environment value, got: ${value}`);
+  }
+  return parsed;
+}
+
+function parseBoundedPositiveInteger(
+  value: string | undefined,
+  defaultValue: number,
+  minimum: number,
+  maximum: number
+): number {
+  const parsed = parsePositiveInteger(value, defaultValue);
+  if (parsed < minimum || parsed > maximum) {
+    throw new Error(`Expected integer from ${minimum} to ${maximum}, got: ${parsed}`);
   }
   return parsed;
 }

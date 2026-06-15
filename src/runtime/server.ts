@@ -3,13 +3,14 @@ import { loadWardenConfig, type WardenConfig } from "../agent/config.ts";
 import { redactPayload } from "../agent/security/redaction.ts";
 import {
   approveRuntimeApproval,
-  createRuntimeState,
   getRuntimeRun,
   listRuntimeRuns,
   rejectRuntimeApproval,
   startRuntimeRun,
   type RuntimeDependencies
 } from "./loop.ts";
+import { createPersistentRuntimeState, createRuntimeRepository } from "./rehydrate.ts";
+import { getRuntimeRepository } from "./storage.ts";
 import type { RuntimeEvent, RuntimeRunRequest, RuntimeState } from "./types.ts";
 
 export type RuntimeServerOptions = {
@@ -19,10 +20,11 @@ export type RuntimeServerOptions = {
 };
 
 export function createWardenRuntimeServer(options: RuntimeServerOptions = {}): { server: Server; state: RuntimeState } {
-  const state = options.state ?? createRuntimeState();
   const config = options.config ?? loadWardenConfig();
+  const state = options.state ?? createPersistentRuntimeState(createRuntimeRepository(config.storage));
   const deps: RuntimeDependencies = {
     config,
+    repository: getRuntimeRepository(state),
     onEvent: options.silent ? undefined : logRuntimeEvent
   };
 

@@ -28,9 +28,14 @@
     "demo:warden:planner": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-planner-regression.ts",
     "demo:warden:approval-resume": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-approval-resume-regression.ts",
     "demo:warden:domain": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-domain-regression.ts",
+    "demo:warden:ach-mcp": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-ach-mcp-regression.ts",
+    "demo:warden:runtime-persistence": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-runtime-persistence-regression.ts",
+    "demo:warden:live-osint-guard": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-live-osint-guard-regression.ts",
+    "demo:warden:sourcevet-ach-resume": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-sourcevet-ach-resume-regression.ts",
+    "demo:warden:live-osint-resume": "node --disable-warning=ExperimentalWarning --experimental-strip-types demo/run-warden-live-osint-resume-regression.ts",
     "submission:verify": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/build-submission-package.ts --verify-only",
     "submission:package": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/build-submission-package.ts",
-    "test": "npm run build && npm run demo:warden:regression && npm run demo:warden:storage-regression && npm run demo:warden:codex-regression && npm run demo:warden:env-regression && npm run demo:warden:p5-regression && npm run demo:warden:runtime && npm run demo:warden:cli && npm run demo:warden:answer && npm run demo:warden:planner && npm run demo:warden:approval-resume && npm run demo:warden:domain"
+    "test": "npm run build && npm run demo:warden:regression && npm run demo:warden:storage-regression && npm run demo:warden:codex-regression && npm run demo:warden:env-regression && npm run demo:warden:p5-regression && npm run demo:warden:runtime && npm run demo:warden:cli && npm run demo:warden:answer && npm run demo:warden:planner && npm run demo:warden:approval-resume && npm run demo:warden:domain && npm run demo:warden:ach-mcp && npm run demo:warden:runtime-persistence && npm run demo:warden:live-osint-guard && npm run demo:warden:sourcevet-ach-resume && npm run demo:warden:live-osint-resume"
   },
   "keywords": [
     "agent-harness",

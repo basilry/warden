@@ -16,7 +16,11 @@ export function createEvidenceCuratorAgent(): Agent<unknown, EvidenceCuratorOutp
         context.options.fixtureVariant === "sourcevet_uncorroborated" ||
         context.options.fixtureVariant === "sourcevet_circular"
       ) {
-        const output = createSourceVetRiskFixture(context.options.fixtureVariant);
+        const output = mergeExtraEvidence(
+          createSourceVetRiskFixture(context.options.fixtureVariant),
+          context.options.extraKnowledgeUnits,
+          context.options.extraEvidenceBundles
+        );
         return {
           status: "succeeded",
           output,
@@ -34,7 +38,11 @@ export function createEvidenceCuratorAgent(): Agent<unknown, EvidenceCuratorOutp
       }
 
       const variant = context.options.fixtureVariant === "missing_reliability" ? "missing_reliability" : "normal";
-      const output = createSupplyChainKnowledgeFixture(variant);
+      const output = mergeExtraEvidence(
+        createSupplyChainKnowledgeFixture(variant),
+        context.options.extraKnowledgeUnits,
+        context.options.extraEvidenceBundles
+      );
       return {
         status: "succeeded",
         output,
@@ -44,5 +52,17 @@ export function createEvidenceCuratorAgent(): Agent<unknown, EvidenceCuratorOutp
         ]
       };
     }
+  };
+}
+
+function mergeExtraEvidence(
+  base: EvidenceCuratorOutput,
+  extraUnits: KnowledgeUnit[] = [],
+  extraBundles: EvidenceBundle[] = []
+): EvidenceCuratorOutput {
+  if (extraUnits.length === 0 && extraBundles.length === 0) return base;
+  return {
+    units: [...base.units, ...extraUnits],
+    bundles: [...base.bundles, ...extraBundles]
   };
 }

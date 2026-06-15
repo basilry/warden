@@ -1,5 +1,6 @@
 import { formatPolicyDecision } from "../policy.ts";
-import { createAchLocalTool } from "../tools/ach-local.ts";
+import { invokeAchMcpTool } from "../mcp/ach-client.ts";
+import type { ToolResult } from "../mcp/types.ts";
 import type { AchAnalysisResult, Agent, CaseFrame, EvidenceBundle, ToolAction } from "../types.ts";
 import { createHandoff } from "./base.ts";
 
@@ -12,12 +13,14 @@ export function createAchAnalystAgent(): Agent<AchAnalystInput, AchAnalysisResul
   return {
     role: "ach_analyst",
     async run(task, context, input) {
-      const tool = createAchLocalTool();
       const policyContext = { runId: context.runId, taskId: task.id, role: "ach_analyst" as const };
 
       const openAction = createAction("open_case", "Hypothesis Analysis", "WRITE", input.frame);
       evaluateAndRecord(openAction, context, task.id, context.options.fixtureVariant === "skip_policy_for_write");
-      let caseRecord = tool.openCaseFromFrame(input.frame);
+      let caseRecord = requireMcpOutput(
+        await invokeAchMcpTool("open_case", { frame: input.frame }),
+        openAction.name
+      ).caseRecord;
       context.trace.record({
         phase: "tool_result",
         actor: "tool",
@@ -29,7 +32,10 @@ export function createAchAnalystAgent(): Agent<AchAnalystInput, AchAnalysisResul
 
       const addEvidenceAction = createAction("add_evidence", "Hypothesis Analysis", "WRITE", input.bundles);
       evaluateAndRecord(addEvidenceAction, context, task.id, context.options.fixtureVariant === "skip_policy_for_write");
-      caseRecord = tool.addEvidenceFromBundles(caseRecord, input.bundles);
+      caseRecord = requireMcpOutput(
+        await invokeAchMcpTool("add_evidence", { caseRecord, bundles: input.bundles }),
+        addEvidenceAction.name
+      ).caseRecord;
       context.trace.record({
         phase: "tool_result",
         actor: "tool",
@@ -41,7 +47,10 @@ export function createAchAnalystAgent(): Agent<AchAnalystInput, AchAnalysisResul
 
       const assessAction = createAction("assess", "Hypothesis Analysis", "WRITE", input.bundles);
       evaluateAndRecord(assessAction, context, task.id, context.options.fixtureVariant === "skip_policy_for_write");
-      caseRecord = tool.assessFromBundles(caseRecord, input.bundles);
+      caseRecord = requireMcpOutput(
+        await invokeAchMcpTool("assess", { caseRecord, bundles: input.bundles }),
+        assessAction.name
+      ).caseRecord;
       context.trace.record({
         phase: "tool_result",
         actor: "tool",
@@ -53,10 +62,13 @@ export function createAchAnalystAgent(): Agent<AchAnalystInput, AchAnalysisResul
 
       const rankAction = createAction("rank_hypotheses", "Hypothesis Analysis", "READ", { caseId: caseRecord.id });
       evaluateAndRecord(rankAction, context, task.id, false);
-      const result = tool.buildAchAnalysisResult(
-        caseRecord,
-        input.bundles.map((bundle) => bundle.id)
-      );
+      const result = requireMcpOutput(
+        await invokeAchMcpTool("rank_hypotheses", {
+          caseRecord,
+          evidenceBundleIds: input.bundles.map((bundle) => bundle.id)
+        }),
+        rankAction.name
+      ).result;
       context.trace.record({
         phase: "tool_result",
         actor: "tool",
@@ -100,6 +112,13 @@ export function createAchAnalystAgent(): Agent<AchAnalystInput, AchAnalysisResul
       }
     }
   };
+}
+
+function requireMcpOutput<T>(result: ToolResult<T>, toolName: string): T {
+  if (result.status !== "succeeded" || !result.output) {
+    throw new Error(`ACH MCP tool ${toolName} failed: ${result.error ?? result.status}`);
+  }
+  return result.output;
 }
 
 function createAction(name: string, capability: string, risk: ToolAction["risk"], input: unknown): ToolAction {

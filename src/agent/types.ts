@@ -170,6 +170,8 @@ export type RunOptions = {
   withBriefing?: boolean;
   writeArtifacts?: boolean;
   artifactDir?: string;
+  extraKnowledgeUnits?: KnowledgeUnit[];
+  extraEvidenceBundles?: EvidenceBundle[];
 };
 
 export type Verdict = "C" | "I" | "N";

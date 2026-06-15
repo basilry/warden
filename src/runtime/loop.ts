@@ -9,10 +9,11 @@ import { routeToolCallWithPolicy } from "../agent/mcp/router.ts";
 import { createStdioMcpClient } from "../agent/mcp/stdio-client.ts";
 import { loadMcpRegistryConfig } from "../agent/mcp/config.ts";
 import type { CapabilityRouter, McpClient } from "../agent/mcp/types.ts";
+import type { OsintFetchLike } from "../connectors/osint/http-client.ts";
 import { retrieveSupplyChainGrounding } from "../agent/knowledge/retrieval.ts";
 import { createPolicyEngine } from "../agent/policy.ts";
 import { runTeamWorkflow } from "../agent/team-runner.ts";
-import type { KnowledgeUnit, TeamRunResult } from "../agent/types.ts";
+import type { TeamRunResult } from "../agent/types.ts";
 import { approvePendingApproval, rejectPendingApproval } from "./approval-actions.ts";
 import {
   composeDeterministicAnswer,
@@ -21,8 +22,16 @@ import {
   type AnswerContext,
   type RuntimeAnswerMode
 } from "./answer.ts";
-import { EXTERNAL_OSINT_FETCH_TOOL, fetchApprovedExternalOsint } from "./external-fetch.ts";
+import { EXTERNAL_OSINT_FETCH_TOOL } from "./external-fetch.ts";
 import { selectRuntimeToolPlan } from "./planner.ts";
+import { resumeApprovedExternalFetchRun } from "./resume.ts";
+import {
+  appendRuntimeEvent,
+  attachRuntimeRepository,
+  getRuntimeRepository,
+  saveRuntimeRun,
+  type RuntimeRepository
+} from "./storage.ts";
 import type {
   RuntimeDomainGrounding,
   RuntimeEvent,
@@ -39,6 +48,8 @@ export type RuntimeDependencies = {
   config?: WardenConfig;
   model?: ModelAdapter;
   remotes?: McpClient[];
+  repository?: RuntimeRepository;
+  osintFetchImpl?: OsintFetchLike;
   onEvent?: (event: RuntimeEvent, run: RuntimeRun) => void;
 };
 
@@ -49,8 +60,9 @@ export type RuntimeApprovalCommand = {
   reason?: string;
 };
 
-export function createRuntimeState(): RuntimeState {
-  return { runs: new Map() };
+export function createRuntimeState(repository?: RuntimeRepository): RuntimeState {
+  const state: RuntimeState = { runs: new Map() };
+  return repository ? attachRuntimeRepository(state, repository) : state;
 }
 
 export function startRuntimeRun(
@@ -58,6 +70,7 @@ export function startRuntimeRun(
   request: RuntimeRunRequest,
   deps: RuntimeDependencies = {}
 ): RuntimeRun {
+  const runtimeDeps = withStateRepository(state, deps);
   const now = nowIso();
   const run: RuntimeRun = {
     id: newId("runtime"),
@@ -76,8 +89,8 @@ export function startRuntimeRun(
     outputs: {}
   };
   state.runs.set(run.id, run);
-  emit(run, "run.created", "런타임 실행이 대기열에 등록되었습니다.", { objective: run.objective }, deps);
-  void executeRuntimeRun(run, deps);
+  emit(run, "run.created", "런타임 실행이 대기열에 등록되었습니다.", { objective: run.objective }, runtimeDeps);
+  void executeRuntimeRun(run, runtimeDeps);
   return run;
 }
 
@@ -195,6 +208,11 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
           traceEvents: result.output.trace.length,
           domainGrounding: run.outputs.domainGrounding,
           fetchedEvidence: run.outputs.fetchedEvidence,
+          caseFrame: result.output.outputs.caseFrame,
+          knowledgeUnits: result.output.outputs.knowledgeUnits,
+          evidenceBundles: result.output.outputs.evidenceBundles,
+          ach: result.output.outputs.ach,
+          sourceReview: result.output.outputs.sourceReview,
           answer: composeDeterministicAnswer({
             objective: run.objective,
             runStatus: run.status,
@@ -236,6 +254,8 @@ export async function approveRuntimeApproval(
   input: RuntimeApprovalCommand,
   deps: RuntimeDependencies = {}
 ): Promise<RuntimeRun> {
+  const runtimeDeps = withStateRepository(state, deps);
+  const config = runtimeDeps.config ?? loadWardenConfig();
   const run = requireRun(state, runId);
   const resolved = approvePendingApproval(run, {
     approvalId: input.approvalId,
@@ -245,25 +265,29 @@ export async function approveRuntimeApproval(
   });
   let nextRun = resolved.run;
   state.runs.set(nextRun.id, nextRun);
-  emitNewEvents(run, nextRun, deps);
+  emitNewEvents(run, nextRun, runtimeDeps);
+  saveRuntimeRun(runtimeDeps.repository, nextRun);
 
   if (resolved.resumeReady && resolved.approval.action.name === EXTERNAL_OSINT_FETCH_TOOL) {
-    const fetched = fetchApprovedExternalOsint({
-      query: run.objective,
-      approval: resolved.approval,
-      runId: nextRun.id,
-      extraTags: ["runtime-resume"]
+    nextRun = await resumeApprovedExternalFetchRun(nextRun, resolved.approval, {
+      osint: config.osint,
+      osintFetchImpl: runtimeDeps.osintFetchImpl
     });
-    nextRun = completeApprovedExternalFetch(nextRun, fetched);
     state.runs.set(nextRun.id, nextRun);
+    saveRuntimeRun(runtimeDeps.repository, nextRun);
     emit(
       nextRun,
       "external.fetch_succeeded",
-      `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 로컬 fetch 근거 ${fetched.length}건을 반영했습니다.`,
-      { toolName: EXTERNAL_OSINT_FETCH_TOOL, evidenceCount: fetched.length },
-      deps
+      `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 SourceVet 검증과 ACH 재평가를 완료했습니다.`,
+      {
+        toolName: EXTERNAL_OSINT_FETCH_TOOL,
+        evidenceCount: nextRun.outputs.resumeResult?.fetchedUnits.length ?? 0,
+        promotedEvidenceCount: nextRun.outputs.resumeResult?.promotedBundles.length ?? 0,
+        survivorDelta: nextRun.outputs.resumeResult?.survivorDelta
+      },
+      runtimeDeps
     );
-    emit(nextRun, "run.succeeded", `런타임 실행 상태: ${formatRunStatusKo(nextRun.status)}.`, undefined, deps);
+    emit(nextRun, "run.succeeded", `런타임 실행 상태: ${formatRunStatusKo(nextRun.status)}.`, undefined, runtimeDeps);
   }
 
   return nextRun;
@@ -275,6 +299,7 @@ export function rejectRuntimeApproval(
   input: RuntimeApprovalCommand,
   deps: RuntimeDependencies = {}
 ): RuntimeRun {
+  const runtimeDeps = withStateRepository(state, deps);
   const run = requireRun(state, runId);
   const resolved = rejectPendingApproval(run, {
     approvalId: input.approvalId,
@@ -283,8 +308,9 @@ export function rejectRuntimeApproval(
     reason: input.reason
   });
   state.runs.set(resolved.run.id, resolved.run);
-  emitNewEvents(run, resolved.run, deps);
-  emit(resolved.run, "run.failed", resolved.run.error ?? "승인 거부로 런타임 실행이 실패했습니다.", undefined, deps);
+  emitNewEvents(run, resolved.run, runtimeDeps);
+  saveRuntimeRun(runtimeDeps.repository, resolved.run);
+  emit(resolved.run, "run.failed", resolved.run.error ?? "승인 거부로 런타임 실행이 실패했습니다.", undefined, runtimeDeps);
   return resolved.run;
 }
 
@@ -441,73 +467,12 @@ function requireRun(state: RuntimeState, runId: string): RuntimeRun {
   return run;
 }
 
-function completeApprovedExternalFetch(run: RuntimeRun, fetched: KnowledgeUnit[]): RuntimeRun {
-  const completedAt = nowIso();
-  const fetchedEvidence = [...(run.outputs.fetchedEvidence ?? []), ...fetched];
-  const previousAnswer = run.outputs.answer;
-  const nextRun: RuntimeRun = {
-    ...run,
-    status: "succeeded",
-    completedAt,
-    updatedAt: completedAt,
-    outputs: {
-      ...run.outputs,
-      fetchedEvidence
-    },
-    error: undefined
-  };
-  nextRun.outputs.answer = previousAnswer
-    ? {
-        ...previousAnswer,
-        evidenceUsed: uniqueNonEmpty([
-          ...previousAnswer.evidenceUsed,
-          ...fetched.flatMap((unit) =>
-            unit.claims
-              .slice(0, 1)
-              .map((claim) => `${claim.text} (${unit.sourceUri}, reliability=${unit.reliability ?? "unknown"})`)
-          )
-        ]),
-        uncertainty: uniqueNonEmpty([
-          ...previousAnswer.uncertainty.filter((item) => !item.includes("외부 OSINT 수집은 승인 전")),
-          "승인 후 외부 fetch 근거는 현재 deterministic local fixture입니다. 실제 웹 OSINT connector로 교체해야 합니다."
-        ]),
-        blockedActions: previousAnswer.blockedActions.filter((item) => !item.includes(EXTERNAL_OSINT_FETCH_TOOL)),
-        nextSteps: uniqueNonEmpty([
-          ...previousAnswer.nextSteps.filter((item) => !item.includes(`${EXTERNAL_OSINT_FETCH_TOOL} 승인`)),
-          "승인 후 추가 근거를 SourceVet과 ACH 재평가 입력으로 다시 투입해야 합니다."
-        ]),
-        authorityRefs: uniqueNonEmpty([
-          ...previousAnswer.authorityRefs,
-          `approvedExternalEvidence=${fetchedEvidence.length}`
-        ])
-      }
-    : composeDeterministicAnswer({
-        objective: nextRun.objective,
-        runStatus: nextRun.status,
-        approvals: nextRun.approvals,
-        modelResponses: nextRun.modelResponses,
-        domainGrounding: nextRun.outputs.domainGrounding,
-        fetchedEvidence
-      });
-  return nextRun;
-}
-
 function emitNewEvents(previousRun: RuntimeRun, nextRun: RuntimeRun, deps: RuntimeDependencies): void {
   for (const event of nextRun.events.slice(previousRun.events.length)) {
+    appendRuntimeEvent(deps.repository, event);
     deps.onEvent?.(event, nextRun);
   }
-}
-
-function uniqueNonEmpty(values: Array<string | undefined>): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    result.push(trimmed);
-  }
-  return result;
+  saveRuntimeRun(deps.repository, nextRun);
 }
 
 function loadRuntimeRemotes(): McpClient[] {
@@ -586,11 +551,21 @@ function emit(
   };
   run.events.push(event);
   run.updatedAt = event.ts;
+  appendRuntimeEvent(deps.repository, event);
+  saveRuntimeRun(deps.repository, run);
   deps.onEvent?.(event, run);
 }
 
 function touch(run: RuntimeRun): void {
   run.updatedAt = nowIso();
+}
+
+function withStateRepository(state: RuntimeState, deps: RuntimeDependencies): RuntimeDependencies {
+  if (deps.repository && !getRuntimeRepository(state)) {
+    attachRuntimeRepository(state, deps.repository);
+  }
+  const repository = deps.repository ?? getRuntimeRepository(state);
+  return repository ? { ...deps, repository } : deps;
 }
 
 function formatToolStatusKo(status: string): string {

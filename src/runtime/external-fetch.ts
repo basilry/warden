@@ -72,7 +72,7 @@ function buildFixtureUnits(input: {
       approval: input.approval,
       runId: input.runId,
       tags: input.tags,
-      reliability: "approved-local-fixture:B",
+      reliability: "B2",
       claims: [
         {
           text:
@@ -93,7 +93,7 @@ function buildFixtureUnits(input: {
       approval: input.approval,
       runId: input.runId,
       tags: input.tags,
-      reliability: "approved-local-fixture:B-",
+      reliability: "B3",
       claims: [
         {
           text:
@@ -114,7 +114,7 @@ function buildFixtureUnits(input: {
       approval: input.approval,
       runId: input.runId,
       tags: input.tags,
-      reliability: "approved-local-fixture:A",
+      reliability: "A2",
       claims: [
         {
           text:
@@ -147,7 +147,7 @@ function makeUnit(input: {
     id: `claim_${input.slug}_${index + 1}`,
     text: claim.text,
     confidence: claim.confidence,
-    evidenceRefs: [input.sourceUri]
+    evidenceRefs: [`approval:${input.approval.id}:${input.slug}:${index + 1}`]
   }));
   return {
     id: `ku_${input.slug}_${contentHash.slice(0, 12)}`,
