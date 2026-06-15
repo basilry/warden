@@ -57,16 +57,19 @@ export async function runTeamWorkflow(userRequest = DEFAULT_REQUEST, options: Ru
     payload: { userRequest, options }
   });
 
-  const supervisorTask = createAgentTask(runId, "supervisor", "Plan WARDEN P0 specialist workflow.", userRequest);
-  run.tasks.push(supervisorTask);
-  trace.record({ phase: "task_created", actor: "system", taskId: supervisorTask.id, summary: supervisorTask.goal });
-  const supervisorResult = await runAgentTask(createSupervisorAgent(), supervisorTask, context, userRequest);
-  if (supervisorResult.status !== "succeeded") {
-    return finishFailedRun(run, context, outputs, supervisorResult.summary);
+  if (shouldRunSupervisor(options)) {
+    const supervisorTask = createAgentTask(runId, "supervisor", "Plan WARDEN P0 specialist workflow.", userRequest);
+    run.tasks.push(supervisorTask);
+    trace.record({ phase: "task_created", actor: "system", taskId: supervisorTask.id, summary: supervisorTask.goal });
+    const supervisorResult = await runAgentTask(createSupervisorAgent(), supervisorTask, context, userRequest);
+    if (supervisorResult.status !== "succeeded") {
+      return finishFailedRun(run, context, outputs, supervisorResult.summary);
+    }
   }
 
   const withSourceVet = shouldRunSourceVet(options);
-  const plan = buildFixedPlan(runId, userRequest, { withSourceVet });
+  const withBriefing = shouldRunBriefing(options);
+  const plan = buildFixedPlan(runId, userRequest, { withSourceVet, withBriefing });
   run.tasks.push(...plan.tasks);
   for (const task of plan.tasks) {
     trace.record({ phase: "task_created", actor: "system", taskId: task.id, summary: task.goal, payload: task });
@@ -142,18 +145,20 @@ export async function runTeamWorkflow(userRequest = DEFAULT_REQUEST, options: Ru
     return finishFailedRun(run, context, outputs, verificationResult.summary);
   }
 
-  const briefingTask = plan.tasks.find((task) => task.role === "briefing");
-  if (!briefingTask) return finishFailedRun(run, context, outputs, "Briefing task missing.");
-  const briefingResult = await runAgentTask(createBriefingAgent(), briefingTask, context, {
-    ach: outputs.ach,
-    verification: outputs.verification,
-    sourceReview: outputs.sourceReview,
-    policyReview: outputs.policyReview
-  });
-  if (briefingResult.status !== "succeeded" || !briefingResult.output) {
-    return finishFailedRun(run, context, outputs, briefingResult.summary);
+  if (withBriefing) {
+    const briefingTask = plan.tasks.find((task) => task.role === "briefing");
+    if (!briefingTask) return finishFailedRun(run, context, outputs, "Briefing task missing.");
+    const briefingResult = await runAgentTask(createBriefingAgent(), briefingTask, context, {
+      ach: outputs.ach,
+      verification: outputs.verification,
+      sourceReview: outputs.sourceReview,
+      policyReview: outputs.policyReview
+    });
+    if (briefingResult.status !== "succeeded" || !briefingResult.output) {
+      return finishFailedRun(run, context, outputs, briefingResult.summary);
+    }
+    outputs.brief = briefingResult.output as AuditBrief;
   }
-  outputs.brief = briefingResult.output as AuditBrief;
 
   run.status = "succeeded";
   run.completedAt = nowIso();
@@ -169,7 +174,12 @@ export async function runTeamWorkflow(userRequest = DEFAULT_REQUEST, options: Ru
   return result;
 }
 
-export function buildFixedPlan(runId: string, objective: string, options: { withSourceVet?: boolean } = {}): TeamPlan {
+export function buildFixedPlan(
+  runId: string,
+  objective: string,
+  options: { withSourceVet?: boolean; withBriefing?: boolean } = {}
+): TeamPlan {
+  const withBriefing = options.withBriefing !== false;
   const roles: { role: AgentRole; goal: string; dependsOn: string[] }[] = [
     { role: "case_framer", goal: "Convert the user request into an ACH case frame.", dependsOn: [] },
     { role: "evidence_curator", goal: "Normalize fixture evidence into KnowledgeUnits and EvidenceBundles.", dependsOn: ["case_framer"] },
@@ -189,7 +199,9 @@ export function buildFixedPlan(runId: string, objective: string, options: { with
       dependsOn: options.withSourceVet ? ["sourcevet_reviewer", "policy_reviewer"] : ["policy_reviewer"]
     },
     { role: "verifier", goal: "Independently verify ACH output, source risk, policy trace, and matrix completeness.", dependsOn: ["ach_analyst"] },
-    { role: "briefing", goal: "Create an audit brief only after verification passes.", dependsOn: ["verifier"] }
+    ...(withBriefing
+      ? [{ role: "briefing" as const, goal: "Create an audit brief only after verification passes.", dependsOn: ["verifier"] }]
+      : [])
   ];
 
   return {
@@ -268,6 +280,14 @@ function shouldRunSourceVet(options: RunOptions): boolean {
     options.fixtureVariant === "sourcevet_uncorroborated" ||
     options.fixtureVariant === "sourcevet_circular"
   );
+}
+
+function shouldRunSupervisor(options: RunOptions): boolean {
+  return options.withSupervisor !== false;
+}
+
+function shouldRunBriefing(options: RunOptions): boolean {
+  return options.withBriefing !== false;
 }
 
 function buildPlannedToolCalls(withSourceVet: boolean): ToolCallPlan[] {

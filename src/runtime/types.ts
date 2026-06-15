@@ -1,6 +1,7 @@
 import type { ApprovalRequest } from "../agent/approval.ts";
 import type { ModelResponse } from "../agent/model-adapter.ts";
 import type { ToolResult } from "../agent/mcp/types.ts";
+import type { RuntimeAnswer } from "./answer.ts";
 
 export type RuntimeRunStatus = "queued" | "running" | "waiting_approval" | "succeeded" | "failed";
 
@@ -48,6 +49,7 @@ export type RuntimeRun = {
   completedAt?: string;
   maxIterations: number;
   iteration: number;
+  withSourceVet: boolean;
   events: RuntimeEvent[];
   modelResponses: ModelResponse[];
   toolResults: RuntimeToolRecord[];
@@ -57,6 +59,7 @@ export type RuntimeRun = {
     teamStatus?: string;
     survivors?: string[];
     traceEvents?: number;
+    answer?: RuntimeAnswer;
   };
   error?: string;
 };

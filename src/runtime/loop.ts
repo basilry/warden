@@ -12,6 +12,7 @@ import type { CapabilityRouter, McpClient, RoutedToolCall } from "../agent/mcp/t
 import { createPolicyEngine } from "../agent/policy.ts";
 import { runTeamWorkflow } from "../agent/team-runner.ts";
 import type { TeamRunResult } from "../agent/types.ts";
+import { composeDeterministicAnswer } from "./answer.ts";
 import type { RuntimeEvent, RuntimeRun, RuntimeRunRequest, RuntimeState, RuntimeToolRecord } from "./types.ts";
 
 const DEFAULT_OBJECTIVE =
@@ -42,6 +43,7 @@ export function startRuntimeRun(
     updatedAt: now,
     maxIterations: Math.max(1, Math.min(request.maxIterations ?? 2, 8)),
     iteration: 0,
+    withSourceVet: request.withSourceVet === true,
     events: [],
     modelResponses: [],
     toolResults: [],
@@ -68,7 +70,8 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
   const approvals = createApprovalQueue();
   const policy = createPolicyEngine();
   const trace = createTraceRecorder(run.id);
-  const router = createRuntimeRouter(run.objective, deps);
+  const router = createRuntimeRouter(run.objective, deps, { withSourceVet: run.withSourceVet });
+  let latestTeamResult: TeamRunResult | undefined;
 
   run.status = "running";
   touch(run);
@@ -80,30 +83,32 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
       touch(run);
       emit(run, "loop.iteration", `반복 ${index}/${run.maxIterations}.`, undefined, deps);
 
-      const modelRequest = createModelRequest({
-        role: "planner",
-        prompt: buildRuntimePrompt(run, index),
-        context: summarizeRunForModel(run),
-        responseFormat: "json"
-      });
-      emit(
-        run,
-        "model.requested",
-        `${model.id}에 계획 제안을 요청합니다.`,
-        { model: model.id, role: modelRequest.role, iteration: index },
-        deps
-      );
-      const modelStartedAt = Date.now();
-      const proposal = await model.generate(modelRequest);
-      const modelDurationMs = Date.now() - modelStartedAt;
-      run.modelResponses.push(proposal);
-      emit(
-        run,
-        "model.proposal",
-        `${proposal.model}에서 모델 제안을 받았습니다.`,
-        { warnings: proposal.warnings, model: proposal.model, durationMs: modelDurationMs },
-        deps
-      );
+      if (shouldRequestModelProposal(index)) {
+        const modelRequest = createModelRequest({
+          role: "planner",
+          prompt: buildRuntimePrompt(run, index),
+          context: summarizeRunForModel(run),
+          responseFormat: "json"
+        });
+        emit(
+          run,
+          "model.requested",
+          `${model.id}에 계획 제안을 요청합니다.`,
+          { model: model.id, role: modelRequest.role, iteration: index },
+          deps
+        );
+        const modelStartedAt = Date.now();
+        const proposal = await model.generate(modelRequest);
+        const modelDurationMs = Date.now() - modelStartedAt;
+        run.modelResponses.push(proposal);
+        emit(
+          run,
+          "model.proposal",
+          `${proposal.model}에서 모델 제안을 받았습니다.`,
+          { warnings: proposal.warnings, model: proposal.model, durationMs: modelDurationMs },
+          deps
+        );
+      }
 
       const plan = buildDeterministicRuntimeToolPlan(run, index);
       emit(
@@ -133,17 +138,26 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
 
       if (result.approvalRequest) {
         run.approvals = approvals.listAll();
+        updateRuntimeAnswer(run, latestTeamResult);
         run.status = "waiting_approval";
         touch(run);
         emit(run, "approval.pending", `${plan.toolName} 승인 대기 중입니다.`, result.approvalRequest, deps);
       }
 
       if (result.output && isTeamRunResult(result.output)) {
+        latestTeamResult = result.output;
         run.outputs = {
           teamRunId: result.output.run.id,
           teamStatus: result.output.run.status,
           survivors: result.output.outputs.ach?.survivors,
-          traceEvents: result.output.trace.length
+          traceEvents: result.output.trace.length,
+          answer: composeDeterministicAnswer({
+            objective: run.objective,
+            runStatus: run.status,
+            teamResult: result.output,
+            approvals: run.approvals,
+            modelResponses: run.modelResponses
+          })
         };
       }
     }
@@ -169,7 +183,11 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
   }
 }
 
-export function createRuntimeRouter(objective: string, deps: RuntimeDependencies = {}): CapabilityRouter {
+export function createRuntimeRouter(
+  objective: string,
+  deps: RuntimeDependencies = {},
+  options: { withSourceVet?: boolean } = {}
+): CapabilityRouter {
   const local = createLocalCapabilityRegistry();
   local.registerCapability(
     {
@@ -179,7 +197,13 @@ export function createRuntimeRouter(objective: string, deps: RuntimeDependencies
       risk: "WRITE",
       description: "WARDEN 전문 에이전트 팀을 런타임 MCP 스타일 capability로 실행합니다."
     },
-    () => runTeamWorkflow(objective, { withSourceVet: true, fixtureVariant: "normal" })
+    () =>
+      runTeamWorkflow(objective, {
+        withSupervisor: false,
+        withSourceVet: options.withSourceVet === true,
+        withBriefing: false,
+        fixtureVariant: "normal"
+      })
   );
 
   return {
@@ -187,6 +211,20 @@ export function createRuntimeRouter(objective: string, deps: RuntimeDependencies
     remotes: deps.remotes ?? loadRuntimeRemotes(),
     allowlist: ["run_warden_team", "external_osint_fetch", "fixture_echo"]
   };
+}
+
+function shouldRequestModelProposal(iteration: number): boolean {
+  return iteration === 1;
+}
+
+function updateRuntimeAnswer(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): void {
+  run.outputs.answer = composeDeterministicAnswer({
+    objective: run.objective,
+    runStatus: run.status,
+    teamResult: latestTeamResult,
+    approvals: run.approvals,
+    modelResponses: run.modelResponses
+  });
 }
 
 function loadRuntimeRemotes(): McpClient[] {

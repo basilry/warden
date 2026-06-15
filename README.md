@@ -47,8 +47,22 @@ warden
 [모델] 모델 제안 수신 (mock-deterministic-v1) (0ms)
 [도구] run_warden_team를 정책/MCP로 전달하는 중 (WRITE)...
 [도구] run_warden_team: 성공. (12ms)
+[루프] 반복 2/2.
 [도구] external_osint_fetch: 차단됨. (0ms)
 [승인] external_osint_fetch 승인 대기 중입니다.
+
+답변
+질문 "방산 공급망 핵심 부품 수입 급감 원인을 분석해줘"에 대해 WARDEN의 현재 통제 분석에서는 제재 우회 비축,
+공급망 교란 가설이 생존했습니다. 이는 확정 결론이 아니라 ACH, 정책 게이트, 검증자가 허용한 범위의 중간 분석입니다.
+다만 외부 정보 수집은 승인 대기 상태라, 현재 답변은 로컬/fixture 기반 근거에 한정됩니다.
+
+핵심 판단
+- 제재 우회 비축: 현재 ACH 생존 가설입니다.
+- 공급망 교란: 현재 ACH 생존 가설입니다.
+
+승인 필요
+- external_osint_fetch: External calls are blocked until human approval. (EXTERNAL)
+
 상태: 승인 대기
 ```
 
@@ -99,6 +113,7 @@ curl -sS http://127.0.0.1:8787/runs/<runId>
 | `npm run server` | `npm start`와 동일 |
 | `npm run build` | import/build sanity check |
 | `npm run demo:warden:cli` | CLI regression |
+| `npm run demo:warden:answer` | CLI answer regression |
 | `npm run demo:warden:runtime` | runtime server API regression |
 | `npm run demo:warden` | P0 specialist team demo |
 | `npm run demo:warden:p1` | job, approval, model boundary, knowledge store demo |

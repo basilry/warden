@@ -165,7 +165,9 @@ export type RunOptions = {
     | "skip_policy_for_write"
     | "sourcevet_uncorroborated"
     | "sourcevet_circular";
+  withSupervisor?: boolean;
   withSourceVet?: boolean;
+  withBriefing?: boolean;
   writeArtifacts?: boolean;
   artifactDir?: string;
 };

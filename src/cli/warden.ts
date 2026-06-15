@@ -231,6 +231,7 @@ function printRuntimeEvent(event: RuntimeEvent, options: CliOptions): void {
 }
 
 function printRunResult(run: RuntimeRun): void {
+  printRunAnswer(run);
   const statusColor = run.status === "failed" ? "red" : run.status === "waiting_approval" ? "yellow" : "green";
   output.write(`${color("상태", "bold")}: ${color(formatRunStatusKo(run.status), statusColor)}\n`);
   output.write(`소요 시간: ${formatDuration(elapsedMs(run))}\n`);
@@ -255,6 +256,33 @@ function printRunResult(run: RuntimeRun): void {
   output.write("\n");
 }
 
+function printRunAnswer(run: RuntimeRun): void {
+  const answer = run.outputs.answer;
+  if (!answer) return;
+
+  output.write("\n");
+  output.write(`${style("답변", "bold", "amber")}\n`);
+  output.write(`${wrapLine(answer.directAnswer)}\n\n`);
+  printAnswerList("핵심 판단", answer.keyFindings, "green");
+  printAnswerList("근거", answer.evidenceUsed, "aqua");
+  printAnswerList("한계", answer.uncertainty, "yellow");
+  printAnswerList("승인 필요", answer.blockedActions, "amber");
+  printAnswerList("다음 단계", answer.nextSteps, "cyan");
+  if (answer.warnings.length > 0) {
+    printAnswerList("시스템 주의", answer.warnings.slice(0, 3), "gray");
+  }
+  output.write(`${color("권위 참조", "gray")}: ${answer.authorityRefs.join(", ")}\n\n`);
+}
+
+function printAnswerList(title: string, items: string[], titleColor: keyof typeof COLOR): void {
+  if (items.length === 0) return;
+  output.write(`${style(title, "bold", titleColor)}\n`);
+  for (const item of items) {
+    output.write(`- ${wrapLine(item, 2)}\n`);
+  }
+  output.write("\n");
+}
+
 function printRunList(state: RuntimeState): void {
   const runs = listRuntimeRuns(state);
   if (runs.length === 0) {
@@ -275,7 +303,7 @@ function printCliHeader(config: WardenConfig, options: CliOptions): void {
     `${color("모델", "gray")}: ${color(config.model.provider, "aqua")}  ${color("반복", "gray")}: ${color(String(options.iterations), "mint")}회  ${color("저장소", "gray")}: ${color(config.storage.kind, "amber")}`,
     "",
     `${color("정책", "amber")}: LLM 출력은 제안으로만 취급됩니다.`,
-    `${color("권한", "gray")}: MCP 라우팅, ACH, SourceVet, 승인이 최종 권한을 가집니다.`,
+    `${color("권한", "gray")}: MCP 라우팅, ACH, 검증, 승인이 최종 권한을 가집니다.`,
     `${color("외부 호출", "gray")}: ${color("승인 전 차단", "yellow")}`
   ]);
   output.write("\n");
@@ -443,6 +471,26 @@ function centerText(text: string, width: number): string {
 function padDisplay(text: string, width: number): string {
   const clipped = truncateDisplay(text, width);
   return `${clipped}${" ".repeat(Math.max(0, width - stringWidth(clipped)))}`;
+}
+
+function wrapLine(text: string, indent = 0): string {
+  const width = Math.max(48, terminalWidth() - indent);
+  const prefix = " ".repeat(indent);
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (stringWidth(candidate) <= width) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines.map((line, index) => (index === 0 ? line : `${prefix}${line}`)).join("\n");
 }
 
 function truncateDisplay(text: string, width: number): string {
