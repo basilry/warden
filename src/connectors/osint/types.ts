@@ -1,4 +1,5 @@
 import type { KnowledgeUnit } from "../../agent/types.ts";
+import type { OsintProviderTelemetry, OsintProviderWarning } from "./search-types.ts";
 
 export type OsintAllowedSource = {
   id: string;
@@ -62,5 +63,7 @@ export type OsintFetchResult = {
   sourceVetRequired: true;
   promoteToAch: false;
   warnings: string[];
+  providerWarnings?: OsintProviderWarning[];
+  providerTelemetry?: OsintProviderTelemetry[];
   blockedReason?: OsintBlockedReason;
 };

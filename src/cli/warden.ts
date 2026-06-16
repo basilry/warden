@@ -313,7 +313,17 @@ function printRuntimeEvent(event: RuntimeEvent, options: CliOptions): void {
     return;
   }
   if (event.type === "external.fetch_succeeded") {
-    output.write(`${color("[수집]", "aqua")} ${event.message}\n`);
+    const evidenceCount = readEventNumber(event, "evidenceCount");
+    const promotedEvidenceCount = readEventNumber(event, "promotedEvidenceCount");
+    const details = [
+      evidenceCount === undefined ? undefined : `수집 ${evidenceCount}건`,
+      promotedEvidenceCount === undefined ? undefined : `ACH 승격 ${promotedEvidenceCount}건`
+    ].filter((value): value is string => Boolean(value));
+    output.write(`${color("[수집]", "aqua")} ${event.message}${details.length ? ` (${details.join(", ")})` : ""}\n`);
+    return;
+  }
+  if (event.type === "run.resume_failed") {
+    output.write(`${color("[재개]", "red")} ${event.message}\n`);
     return;
   }
   if (event.type === "run.failed") {
@@ -366,6 +376,7 @@ function printRunResult(run: RuntimeRun): void {
   if (run.outputs.survivors?.length) {
     output.write(`ACH 생존 가설: ${run.outputs.survivors.join(", ")}\n`);
   }
+  printRuntimeDiagnostics(run);
   if (run.approvals.length > 0) {
     output.write("승인 대기열:\n");
     for (const approval of run.approvals) {
@@ -376,6 +387,44 @@ function printRunResult(run: RuntimeRun): void {
     output.write(`${color("오류", "red")}: ${run.error}\n`);
   }
   output.write("\n");
+}
+
+function printRuntimeDiagnostics(run: RuntimeRun): void {
+  const resume = run.outputs.resumeResult;
+  if (!resume) return;
+
+  const artifactCount = resume.osintArtifacts?.length ?? 0;
+  output.write("외부 수집:\n");
+  output.write(
+    `- 모드: ${formatFetchModeKo(resume.fetchMode)}, 수집 ${resume.fetchedUnits.length}건, ACH 승격 ${resume.promotedBundles.length}건, 보류 ${resume.rejectedUnits.length}건, 아티팩트 ${artifactCount}건\n`
+  );
+  if (resume.sourceReview) {
+    output.write(`- SourceVet: ${resume.sourceReview.status}, 플래그 ${resume.sourceReview.flags.length}건\n`);
+  }
+
+  const telemetry = resume.providerTelemetry ?? [];
+  if (telemetry.length > 0) {
+    const attempted = telemetry.filter((entry) => entry.attempted).length;
+    const failed = telemetry.filter((entry) => entry.failed).length;
+    const skipped = telemetry.filter((entry) => !entry.attempted).length;
+    output.write(`- Provider: 시도 ${attempted}개, 실패 ${failed}개, 건너뜀 ${skipped}개\n`);
+    for (const entry of telemetry.slice(0, 3)) {
+      const status = entry.failed
+        ? `실패/${formatProviderErrorKindKo(entry.errorKind)}`
+        : entry.attempted
+          ? "성공"
+          : "건너뜀";
+      output.write(`  · ${entry.sourceId}: ${status}, ${formatDuration(entry.latencyMs)}\n`);
+    }
+  }
+
+  const warnings = uniqueNonEmpty([...(resume.fetchWarnings ?? []), ...(resume.providerWarnings ?? []).map((warning) => warning.message)]);
+  if (warnings.length > 0) {
+    output.write("- 주의:\n");
+    for (const warning of warnings.slice(0, 3)) {
+      output.write(`  · ${wrapLine(warning, 4)}\n`);
+    }
+  }
 }
 
 function printRunAnswer(run: RuntimeRun): void {
@@ -413,7 +462,8 @@ function printRunList(state: RuntimeState): void {
   }
   for (const run of runs) {
     const approvals = `승인 ${run.approvals.length}건`;
-    output.write(`${run.id} ${formatRunStatusKo(run.status)} 반복=${run.iteration}/${run.maxIterations} ${approvals}\n`);
+    const fetched = run.outputs.resumeResult ? ` 수집=${run.outputs.resumeResult.fetchedUnits.length}` : "";
+    output.write(`${run.id} ${formatRunStatusKo(run.status)} 반복=${run.iteration}/${run.maxIterations} ${approvals}${fetched}\n`);
   }
 }
 
@@ -709,6 +759,22 @@ function formatDuration(durationMs: number | undefined): string {
   return `${(durationMs / 1000).toFixed(1)}s`;
 }
 
+function formatFetchModeKo(mode: string): string {
+  if (mode === "fixture") return "fixture";
+  if (mode === "live-osint") return "live OSINT";
+  return mode;
+}
+
+function formatProviderErrorKindKo(kind: string | undefined): string {
+  if (kind === "rate_limited") return "rate limit";
+  if (kind === "timeout") return "timeout";
+  if (kind === "http_error") return "HTTP";
+  if (kind === "config_invalid") return "config";
+  if (kind === "malformed_response") return "malformed";
+  if (!kind) return "unknown";
+  return kind;
+}
+
 function formatRunStatusKo(status: string | undefined): string {
   if (status === "queued") return "대기 중";
   if (status === "running") return "실행 중";
@@ -738,6 +804,10 @@ function translateReasonKo(reason: string): string {
     return "CLI 운영자가 거부했습니다.";
   }
   return reason;
+}
+
+function uniqueNonEmpty(values: Array<string | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
 
 function selectorFromApprovalToken(token: string | undefined): { approvalId?: string; toolName?: string } {

@@ -6,6 +6,11 @@ import {
   assertSearchEndpointAllowed,
   selectSearchSources
 } from "./search-sources.ts";
+import {
+  createOsintProviderQualityTracker,
+  defaultReliabilityForSource,
+  OsintProviderFetchError
+} from "./provider-quality.ts";
 import type {
   OsintSearchOptions,
   OsintSearchRequest,
@@ -49,17 +54,36 @@ export async function runNaturalLanguageOsintSearch(
   const units = [];
   const artifacts: OsintStoredArtifact[] = [];
   const warnings: string[] = [];
+  const providerQuality = createOsintProviderQualityTracker();
 
   for (const source of sources) {
+    const cooldownWarning = providerQuality.activeCooldown(source);
+    if (cooldownWarning) {
+      warnings.push(cooldownWarning.message);
+      providerQuality.recordCooldownSkip(source, request.runId, cooldownWarning);
+      continue;
+    }
+
+    const attempt = providerQuality.beginAttempt(source);
+    let documents: SearchDocument[];
     try {
-      const documents = await fetchSearchDocuments(source, request, query, fetchImpl, capturedAt);
-      if (documents.length === 0) {
-        warnings.push(`${source.id}: no matching documents.`);
-        continue;
-      }
-      const payload = { documents };
-      artifacts.push(makeArtifact("raw", source.endpoint, capturedAt, { sourceId: source.id, query, payload }));
-      artifacts.push(makeArtifact("redacted", source.endpoint, capturedAt, redactOsintPayload(payload)));
+      documents = await fetchSearchDocuments(source, request, query, fetchImpl, capturedAt);
+      providerQuality.recordSuccess(attempt, request.runId);
+    } catch (error) {
+      const providerWarning = providerQuality.recordFailure(attempt, request.runId, error);
+      warnings.push(providerWarning.message);
+      continue;
+    }
+
+    if (documents.length === 0) {
+      warnings.push(`${source.id}: no matching documents.`);
+      continue;
+    }
+
+    const payload = { documents };
+    artifacts.push(makeArtifact("raw", source.endpoint, capturedAt, { sourceId: source.id, query, payload }));
+    artifacts.push(makeArtifact("redacted", source.endpoint, capturedAt, redactOsintPayload(payload)));
+    try {
       units.push(
         ...normalizeOsintResponseToKnowledgeUnits(
           payload,
@@ -87,7 +111,9 @@ export async function runNaturalLanguageOsintSearch(
       blockedReason: "no_results",
       units: [],
       artifacts,
-      warnings: warnings.length > 0 ? warnings : ["OSINT search returned no normalizable results."]
+      warnings: warnings.length > 0 ? warnings : ["OSINT search returned no normalizable results."],
+      providerWarnings: providerQuality.warnings(),
+      providerTelemetry: providerQuality.telemetry()
     };
   }
 
@@ -95,7 +121,9 @@ export async function runNaturalLanguageOsintSearch(
     status: "succeeded",
     units: units.slice(0, request.maxResults),
     artifacts,
-    warnings
+    warnings,
+    providerWarnings: providerQuality.warnings(),
+    providerTelemetry: providerQuality.telemetry()
   };
 }
 
@@ -106,13 +134,14 @@ async function fetchSearchDocuments(
   fetchImpl: OsintFetchLike,
   capturedAt: string
 ): Promise<SearchDocument[]> {
+  const defaultReliability = defaultReliabilityForSource(source);
   if (source.kind === "gdelt-doc") {
-    return fetchGdeltDocuments(source, request, query, fetchImpl, capturedAt);
+    return fetchGdeltDocuments(source, request, query, fetchImpl, capturedAt, defaultReliability);
   }
   if (source.kind === "brave-web") {
-    return fetchBraveDocuments(source, request, query, fetchImpl, capturedAt);
+    return fetchBraveDocuments(source, request, query, fetchImpl, capturedAt, defaultReliability);
   }
-  return fetchRssDocuments(source, request, query, fetchImpl, capturedAt);
+  return fetchRssDocuments(source, request, query, fetchImpl, capturedAt, defaultReliability);
 }
 
 async function fetchGdeltDocuments(
@@ -120,7 +149,8 @@ async function fetchGdeltDocuments(
   request: OsintSearchRequest,
   query: string,
   fetchImpl: OsintFetchLike,
-  capturedAt: string
+  capturedAt: string,
+  defaultReliability: string
 ): Promise<SearchDocument[]> {
   const endpoint = assertSearchEndpointAllowed(source);
   endpoint.searchParams.set("query", buildQuery(source, query, request.preferredDomains, "gdelt-doc"));
@@ -136,7 +166,7 @@ async function fetchGdeltDocuments(
     url: readString(article, "url") ?? endpoint.toString(),
     summary: readString(article, "title") ?? readString(article, "description") ?? "GDELT article search result.",
     publishedAt: parseGdeltSeenDate(readString(article, "seendate")) ?? capturedAt,
-    reliability: readString(article, "reliability") ?? "C3",
+    reliability: readString(article, "reliability") ?? defaultReliability,
     tags: uniqueNonEmpty([
       "gdelt-doc",
       readString(article, "domain") ? `domain:${readString(article, "domain")}` : undefined,
@@ -151,7 +181,8 @@ async function fetchBraveDocuments(
   request: OsintSearchRequest,
   query: string,
   fetchImpl: OsintFetchLike,
-  capturedAt: string
+  capturedAt: string,
+  defaultReliability: string
 ): Promise<SearchDocument[]> {
   const apiKey = source.apiKeyEnv ? process.env[source.apiKeyEnv] : undefined;
   if (source.apiKeyEnv && !apiKey) {
@@ -172,7 +203,7 @@ async function fetchBraveDocuments(
     url: readString(article, "url") ?? endpoint.toString(),
     summary: readString(article, "description") ?? readString(article, "title") ?? "Brave web search result.",
     publishedAt: capturedAt,
-    reliability: "C3",
+    reliability: defaultReliability,
     tags: ["brave-web"]
   }));
 }
@@ -182,7 +213,8 @@ async function fetchRssDocuments(
   request: OsintSearchRequest,
   query: string,
   fetchImpl: OsintFetchLike,
-  capturedAt: string
+  capturedAt: string,
+  defaultReliability: string
 ): Promise<SearchDocument[]> {
   const endpoint = assertSearchEndpointAllowed(source);
   const response = await fetchPayload(endpoint.toString(), request, fetchImpl, "text");
@@ -195,7 +227,7 @@ async function fetchRssDocuments(
       url: item.link || endpoint.toString(),
       summary: item.description,
       publishedAt: parseDate(item.pubDate) ?? capturedAt,
-      reliability: "C3",
+      reliability: defaultReliability,
       tags: ["rss"]
     }));
 }
@@ -209,14 +241,15 @@ async function fetchPayload(
 ): Promise<FetchResponse> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let response: OsintHttpResponse;
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
         controller.abort();
-        reject(new Error(`OSINT search timed out after ${request.timeoutMs}ms.`));
+        reject(new OsintProviderFetchError("timeout", `OSINT search timed out after ${request.timeoutMs}ms.`));
       }, request.timeoutMs);
     });
-    const response = await Promise.race([
+    response = await Promise.race([
       fetchImpl(url, {
         method: "GET",
         headers: {
@@ -228,15 +261,32 @@ async function fetchPayload(
       }),
       timeoutPromise
     ]);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}.`);
+  } catch (error) {
+    if (error instanceof OsintProviderFetchError) throw error;
+    if ((error as Error).name === "AbortError") {
+      throw new OsintProviderFetchError("timeout", `OSINT search timed out after ${request.timeoutMs}ms.`, { cause: error });
     }
+    throw new OsintProviderFetchError("http_error", (error as Error).message, { cause: error });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const errorKind = response.status === 429 ? "rate_limited" : "http_error";
+    throw new OsintProviderFetchError(
+      errorKind,
+      `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}.`,
+      { status: response.status }
+    );
+  }
+
+  try {
     return {
       status: response.status,
       payload: responseType === "json" ? await readJson(response) : await readText(response)
     };
-  } finally {
-    if (timeout) clearTimeout(timeout);
+  } catch (error) {
+    throw new OsintProviderFetchError("malformed_response", (error as Error).message, { status: response.status, cause: error });
   }
 }
 

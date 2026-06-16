@@ -4,6 +4,7 @@ import type { ToolResult } from "../agent/mcp/types.ts";
 import type { SourceReview } from "../agent/sourcevet-types.ts";
 import type { AchAnalysisResult, CaseFrame, EvidenceBundle, KnowledgeUnit } from "../agent/types.ts";
 import type { OsintStoredArtifact } from "../connectors/osint/types.ts";
+import type { OsintProviderTelemetry, OsintProviderWarning } from "../connectors/osint/search-types.ts";
 import type { RuntimeAnswer, RuntimeAnswerMode } from "./answer.ts";
 
 export type RuntimeDomainGrounding = {
@@ -28,6 +29,8 @@ export type RuntimeResumeResult = {
   rejectedUnits: string[];
   osintArtifacts?: OsintStoredArtifact[];
   fetchWarnings?: string[];
+  providerWarnings?: OsintProviderWarning[];
+  providerTelemetry?: OsintProviderTelemetry[];
   sourceReview?: SourceReview;
   achBefore?: AchAnalysisResult;
   achAfter?: AchAnalysisResult;
@@ -59,6 +62,7 @@ export type RuntimeEventType =
   | "approval.pending"
   | "approval.resolved"
   | "run.resume_ready"
+  | "run.resume_failed"
   | "external.fetch_succeeded"
   | "run.succeeded"
   | "run.failed";

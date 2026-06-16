@@ -50,6 +50,8 @@ export async function runApprovedLiveOsintFetch(input: ApprovedLiveOsintFetchInp
       artifacts: searchResult.artifacts,
       sourceVetRequired: true,
       promoteToAch: false,
+      providerWarnings: searchResult.providerWarnings,
+      providerTelemetry: searchResult.providerTelemetry,
       warnings:
         searchResult.status === "succeeded"
           ? [
@@ -146,6 +148,8 @@ async function runLiveSearch(input: ApprovedLiveOsintFetchInput) {
       blockedReason: "config_invalid",
       units: [],
       artifacts: [],
+      providerWarnings: [],
+      providerTelemetry: [],
       warnings: [`Live OSINT search could not run: ${(error as Error).message}`]
     };
   }

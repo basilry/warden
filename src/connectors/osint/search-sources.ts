@@ -64,7 +64,13 @@ function parseSearchSource(value: unknown, origin: string): OsintSearchSource {
     queryPrefix: value.queryPrefix === undefined ? undefined : parseNonEmptyString(value.queryPrefix, `${origin}.queryPrefix`),
     querySuffix: value.querySuffix === undefined ? undefined : parseNonEmptyString(value.querySuffix, `${origin}.querySuffix`),
     defaultFreshness:
-      value.defaultFreshness === undefined ? undefined : parseFreshness(value.defaultFreshness, `${origin}.defaultFreshness`)
+      value.defaultFreshness === undefined ? undefined : parseFreshness(value.defaultFreshness, `${origin}.defaultFreshness`),
+    reliability: value.reliability === undefined ? undefined : parseReliability(value.reliability, `${origin}.reliability`),
+    cooldownMs: value.cooldownMs === undefined ? undefined : parseNonNegativeInteger(value.cooldownMs, `${origin}.cooldownMs`),
+    backoffMultiplier:
+      value.backoffMultiplier === undefined
+        ? undefined
+        : parsePositiveNumber(value.backoffMultiplier, `${origin}.backoffMultiplier`)
   };
   assertSearchEndpointAllowed(source);
   return source;
@@ -78,6 +84,11 @@ function parseKind(value: unknown, label: string): OsintSearchSource["kind"] {
 function parseFreshness(value: unknown, label: string): OsintSearchSource["defaultFreshness"] {
   if (value === "pd" || value === "pw" || value === "pm" || value === "py") return value;
   throw new Error(`${label} must be pd, pw, pm, or py.`);
+}
+
+function parseReliability(value: unknown, label: string): string {
+  if (typeof value === "string" && /^[A-F][1-6]$/.test(value)) return value;
+  throw new Error(`${label} must use Admiralty reliability format A1-F6.`);
 }
 
 function domainMatches(hostname: string, allowedDomain: string): boolean {
@@ -110,6 +121,16 @@ function parseNonEmptyString(value: unknown, label: string): string {
     throw new Error(`${label} must be a non-empty string.`);
   }
   return value.trim();
+}
+
+function parseNonNegativeInteger(value: unknown, label: string): number {
+  if (Number.isInteger(value) && (value as number) >= 0) return value as number;
+  throw new Error(`${label} must be a non-negative integer.`);
+}
+
+function parsePositiveNumber(value: unknown, label: string): number {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  throw new Error(`${label} must be a positive number.`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -148,6 +148,7 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
 | `npm run demo:warden:answer` | CLI answer regression |
 | `npm run demo:warden:runtime` | runtime server API regression |
 | `npm run demo:warden:planner` | planner proposal validation regression |
+| `npm run demo:warden:cli-operator-ux` | 대화형 approve/resume CLI UX regression |
 | `npm run demo:warden:approval-resume` | approval approve/reject/resume regression |
 | `npm run demo:warden:domain` | Korea/Northeast Asia supply-chain grounding regression |
 | `npm run demo:warden` | P0 specialist team demo |
@@ -163,7 +164,11 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
 | `npm run demo:warden:live-osint-guard` | live OSINT approval/allowlist guard regression |
 | `npm run demo:warden:sourcevet-ach-resume` | approval 후 SourceVet + ACH resume regression |
 | `npm run demo:warden:live-osint-resume` | live OSINT search provider + ACH resume regression |
+| `npm run demo:warden:resume-failure` | approval 후 live resume 실패 상태 처리 regression |
 | `npm run demo:warden:osint-search-mcp` | natural-language OSINT search MCP regression |
+| `npm run demo:warden:osint-mcp-boundary` | runtime resume의 OSINT MCP invoker 우선 경계 regression |
+| `npm run demo:warden:osint-scrape-mcp` | approved URL HTML scrape MCP regression |
+| `npm run demo:warden:osint-provider-quality` | OSINT provider telemetry/rate-limit/reliability regression |
 | `npm test` | build + regression 전체 검증 |
 
 ## CLI
@@ -241,6 +246,8 @@ fixtures/osint/search-sources.json
 - Brave Investing.com scoped search: `site:investing.com` 기반 시장/공급망 뉴스 검색
 - Yonhap RSS: 한국어 국제 뉴스 보강
 
+검색 provider에는 reliability profile, cooldown, backoff 설정을 둘 수 있습니다. 429, timeout, HTTP error는 provider telemetry와 warning으로 남습니다.
+
 주요 환경 변수:
 
 ```bash
@@ -269,6 +276,15 @@ BRAVE_SEARCH_API_KEY=...
 ```bash
 WARDEN_OSINT_LIVE_OPT_IN=true WARDEN_OSINT_SEARCH_ENABLED=false npm run demo:warden:live-osint-guard
 ```
+
+OSINT MCP에는 자연어 검색과 HTML scrape 도구가 있습니다.
+
+| MCP tool | Purpose | Guard |
+|---|---|---|
+| `search_news` | 자연어 query를 allowlisted search/RSS provider로 검색 | `WARDEN_OSINT_LIVE_OPT_IN=true` |
+| `scrape_news` | 승인된 http/https URL의 HTML title/text/link를 추출 | `WARDEN_OSINT_LIVE_OPT_IN=true`, localhost/private IP 차단 |
+
+HTML scrape는 현재 HTTP fetch 기반 1차 구현입니다. JS 렌더링, 로그인, 강한 bot 방어가 필요한 페이지는 후속 Web Scraper MCP 단계에서 보강합니다.
 
 ## Recommended Demo Flow
 
@@ -419,6 +435,9 @@ npm test
 - JSONL storage and bundle regression
 - Codex dry-run regression
 - P5 live/security/MCP/ingestion regression
+- ACH MCP, OSINT search MCP, OSINT scrape MCP regression
+- approval resume failure, OSINT MCP boundary, provider quality regression
+- interactive CLI operator approval/resume UX regression
 
 ## Submission Package
 
@@ -474,6 +493,12 @@ submission/warden-p6-package
 - Codex CLI adapter dry-run path
 - security regression pack
 - submission package
+- ACH MCP extraction
+- natural-language OSINT search MCP
+- approved HTML scrape MCP
+- SourceVet + ACH resume after external approval
+- runtime resume failure hardening
+- OSINT provider telemetry/reliability/cooldown
 
 명시적 non-goals:
 

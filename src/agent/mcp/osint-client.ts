@@ -18,6 +18,10 @@ export type OsintMcpClientOptions = {
   config?: McpServerConfig;
 };
 
+export type OsintSearchMcpInvoker = (
+  input: OsintMcpInputByTool["search_news"]
+) => Promise<ToolResult<OsintMcpOutputByTool["search_news"]>>;
+
 export function createDefaultOsintMcpServerConfig(): McpServerConfig {
   return {
     id: "osint-search-mcp",
@@ -49,6 +53,10 @@ export async function invokeOsintMcpTool<TName extends OsintMcpToolName>(
       allowlist: config.allowTools ?? [...OSINT_MCP_TOOL_NAMES]
     }
   );
+}
+
+export function createOsintSearchMcpInvoker(options: OsintMcpClientOptions = {}): OsintSearchMcpInvoker {
+  return (input) => invokeOsintMcpTool("search_news", input, options);
 }
 
 export function buildOsintMcpToolPlan<TName extends OsintMcpToolName>(

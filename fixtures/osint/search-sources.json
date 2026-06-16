@@ -10,6 +10,9 @@
       "allowedDomains": ["api.gdeltproject.org"],
       "allowedPaths": ["/api/v2/doc/"],
       "querySuffix": "(military OR defense OR defence OR security OR sanction OR supply chain OR missile OR navy OR army OR drone OR semiconductor OR shipping)",
+      "reliability": "C3",
+      "cooldownMs": 60000,
+      "backoffMultiplier": 2,
       "tags": ["gdelt", "news", "defense", "public-search"]
     },
     {
@@ -22,6 +25,9 @@
       "allowedPaths": ["/res/v1/web/search"],
       "apiKeyEnv": "BRAVE_SEARCH_API_KEY",
       "defaultFreshness": "pw",
+      "reliability": "C3",
+      "cooldownMs": 60000,
+      "backoffMultiplier": 2,
       "tags": ["brave", "web-search", "news"]
     },
     {
@@ -35,6 +41,9 @@
       "apiKeyEnv": "BRAVE_SEARCH_API_KEY",
       "queryPrefix": "site:investing.com",
       "defaultFreshness": "pw",
+      "reliability": "B3",
+      "cooldownMs": 60000,
+      "backoffMultiplier": 2,
       "tags": ["brave", "investing.com", "market-news", "supply-chain"]
     },
     {
@@ -45,6 +54,9 @@
       "enabled": true,
       "allowedDomains": ["www.yna.co.kr"],
       "allowedPaths": ["/rss/"],
+      "reliability": "B2",
+      "cooldownMs": 30000,
+      "backoffMultiplier": 2,
       "tags": ["rss", "korea", "international", "news"]
     },
     {
@@ -55,6 +67,9 @@
       "enabled": false,
       "allowedDomains": ["www3.nhk.or.jp"],
       "allowedPaths": ["/nhkworld/en/news/"],
+      "reliability": "B2",
+      "cooldownMs": 30000,
+      "backoffMultiplier": 2,
       "tags": ["rss", "japan", "northeast-asia", "news"]
     }
   ]

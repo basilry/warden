@@ -1,4 +1,5 @@
 import { loadWardenConfig, type WardenConfig } from "../../agent/config.ts";
+import { scrapeHtmlDocuments } from "../../connectors/osint/html-scraper.ts";
 import type { OsintFetchLike } from "../../connectors/osint/http-client.ts";
 import { runNaturalLanguageOsintSearch } from "../../connectors/osint/search.ts";
 import { loadOsintSearchSources } from "../../connectors/osint/search-sources.ts";
@@ -6,9 +7,14 @@ import type {
   OsintMcpInputByTool,
   OsintMcpOutputByTool,
   OsintMcpToolName,
+  ScrapeNewsInput,
   SearchNewsInput
 } from "./types.ts";
 import { isOsintMcpToolName } from "./types.ts";
+
+const DEFAULT_SCRAPE_MAX_CHARS = 5000;
+const MAX_SCRAPE_DOCUMENTS = 10;
+const MAX_SCRAPE_CHARS = 50000;
 
 export type OsintMcpToolDeps = {
   config?: WardenConfig;
@@ -21,33 +27,58 @@ export async function dispatchOsintToolCall<TName extends OsintMcpToolName>(
   input: OsintMcpInputByTool[TName],
   deps: OsintMcpToolDeps = {}
 ): Promise<OsintMcpOutputByTool[TName]> {
-  if (name !== "search_news") {
-    throw new Error(`Unsupported OSINT MCP tool: ${String(name)}`);
-  }
-  const parsed = parseSearchNewsInput(input);
   const config = deps.config ?? loadWardenConfig();
-  if (!config.osint.liveOptIn) {
-    throw new Error("OSINT MCP search requires WARDEN_OSINT_LIVE_OPT_IN=true.");
-  }
-  const registry = loadOsintSearchSources(config.osint.searchSourcesPath);
-  const result = await runNaturalLanguageOsintSearch(
-    {
-      query: parsed.query,
-      runId: parsed.runId,
-      approvalId: parsed.approvalId,
-      sourceIds: parsed.sourceIds,
-      preferredDomains: parsed.preferredDomains,
-      maxResults: parsed.maxResults ?? config.osint.maxResults,
-      timeoutMs: config.osint.timeoutMs,
-      userAgent: config.osint.userAgent
-    },
-    registry,
-    {
-      fetchImpl: deps.fetchImpl,
-      now: deps.now
+  if (name === "search_news") {
+    const parsed = parseSearchNewsInput(input);
+    if (!config.osint.liveOptIn) {
+      throw new Error("OSINT MCP search requires WARDEN_OSINT_LIVE_OPT_IN=true.");
     }
-  );
-  return { result } as OsintMcpOutputByTool[TName];
+    const registry = loadOsintSearchSources(config.osint.searchSourcesPath);
+    const result = await runNaturalLanguageOsintSearch(
+      {
+        query: parsed.query,
+        runId: parsed.runId,
+        approvalId: parsed.approvalId,
+        sourceIds: parsed.sourceIds,
+        preferredDomains: parsed.preferredDomains,
+        maxResults: parsed.maxResults ?? config.osint.maxResults,
+        timeoutMs: config.osint.timeoutMs,
+        userAgent: config.osint.userAgent
+      },
+      registry,
+      {
+        fetchImpl: deps.fetchImpl,
+        now: deps.now
+      }
+    );
+    return { result } as OsintMcpOutputByTool[TName];
+  }
+
+  if (name === "scrape_news") {
+    const parsed = parseScrapeNewsInput(input);
+    if (!config.osint.liveOptIn) {
+      throw new Error("OSINT MCP scrape requires WARDEN_OSINT_LIVE_OPT_IN=true.");
+    }
+    const maxDocuments = Math.min(parsed.maxDocuments ?? config.osint.maxResults, MAX_SCRAPE_DOCUMENTS);
+    const result = await scrapeHtmlDocuments(
+      {
+        urls: parsed.urls,
+        runId: parsed.runId,
+        approvalId: parsed.approvalId,
+        maxDocuments,
+        maxChars: parsed.maxChars ?? DEFAULT_SCRAPE_MAX_CHARS,
+        timeoutMs: config.osint.timeoutMs,
+        userAgent: config.osint.userAgent
+      },
+      {
+        fetchImpl: deps.fetchImpl,
+        now: deps.now
+      }
+    );
+    return { result } as OsintMcpOutputByTool[TName];
+  }
+
+  throw new Error(`Unsupported OSINT MCP tool: ${String(name)}`);
 }
 
 export async function dispatchUnknownOsintToolCall(
@@ -77,6 +108,81 @@ function parseSearchNewsInput(input: unknown): SearchNewsInput {
     sourceIds: parseOptionalStringArray(input.sourceIds, "sourceIds"),
     preferredDomains: parseOptionalStringArray(input.preferredDomains, "preferredDomains")
   };
+}
+
+function parseScrapeNewsInput(input: unknown): Required<Pick<ScrapeNewsInput, "urls" | "runId" | "approvalId">> &
+  Pick<ScrapeNewsInput, "maxDocuments" | "maxChars"> {
+  if (!isRecord(input)) {
+    throw new Error("scrape_news requires an object input.");
+  }
+  const runId = parseNonEmptyString(input.runId, "runId");
+  const approvalId = parseNonEmptyString(input.approvalId, "approvalId");
+  const urls = parseScrapeUrls(input);
+  return {
+    urls,
+    runId,
+    approvalId,
+    maxDocuments: input.maxDocuments === undefined ? undefined : parseMaxDocuments(input.maxDocuments),
+    maxChars: input.maxChars === undefined ? undefined : parseMaxChars(input.maxChars)
+  };
+}
+
+function parseScrapeUrls(input: Record<string, unknown>): string[] {
+  const values: string[] = [];
+  if (input.url !== undefined) values.push(parseHttpUrl(input.url, "url"));
+  if (input.urls !== undefined) {
+    if (!Array.isArray(input.urls)) {
+      throw new Error("urls must be a string array.");
+    }
+    values.push(...input.urls.map((item) => parseHttpUrl(item, "urls")));
+  }
+  const urls = [...new Set(values)];
+  if (urls.length === 0) {
+    throw new Error("scrape_news requires url or urls.");
+  }
+  return urls;
+}
+
+function parseHttpUrl(value: unknown, label: string): string {
+  const raw = parseNonEmptyString(value, label);
+  const parsed = new URL(raw);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${label} must use http or https.`);
+  }
+  if (isBlockedNetworkHost(parsed.hostname)) {
+    throw new Error(`${label} must not point to localhost or private network addresses.`);
+  }
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+function isBlockedNetworkHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (!host) return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  if (host === "metadata.google.internal") return true;
+  if (host === "::1" || host === "0:0:0:0:0:0:0:1" || host.startsWith("fe80:")) return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
+  const octets = host.split(".").map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b] = octets;
+  if (a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 192 && b === 168)) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
+function parseMaxDocuments(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_SCRAPE_DOCUMENTS) {
+    throw new Error(`maxDocuments must be an integer from 1 to ${MAX_SCRAPE_DOCUMENTS}.`);
+  }
+  return value as number;
+}
+
+function parseMaxChars(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_SCRAPE_CHARS) {
+    throw new Error(`maxChars must be an integer from 1 to ${MAX_SCRAPE_CHARS}.`);
+  }
+  return value as number;
 }
 
 function parseMaxResults(value: unknown): number {

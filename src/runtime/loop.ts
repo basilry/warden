@@ -5,6 +5,7 @@ import { newId, nowIso } from "../agent/ids.ts";
 import { createModelRequest, type ModelAdapter } from "../agent/model-adapter.ts";
 import { createModelAdapterFromConfig } from "../agent/models/provider.ts";
 import { createLocalCapabilityRegistry } from "../agent/mcp/local-registry.ts";
+import type { OsintSearchMcpInvoker } from "../agent/mcp/osint-client.ts";
 import { routeToolCallWithPolicy } from "../agent/mcp/router.ts";
 import { createStdioMcpClient } from "../agent/mcp/stdio-client.ts";
 import { loadMcpRegistryConfig } from "../agent/mcp/config.ts";
@@ -50,6 +51,7 @@ export type RuntimeDependencies = {
   remotes?: McpClient[];
   repository?: RuntimeRepository;
   osintFetchImpl?: OsintFetchLike;
+  osintSearchInvoker?: OsintSearchMcpInvoker;
   onEvent?: (event: RuntimeEvent, run: RuntimeRun) => void;
 };
 
@@ -269,25 +271,44 @@ export async function approveRuntimeApproval(
   saveRuntimeRun(runtimeDeps.repository, nextRun);
 
   if (resolved.resumeReady && resolved.approval.action.name === EXTERNAL_OSINT_FETCH_TOOL) {
-    nextRun = await resumeApprovedExternalFetchRun(nextRun, resolved.approval, {
-      osint: config.osint,
-      osintFetchImpl: runtimeDeps.osintFetchImpl
-    });
-    state.runs.set(nextRun.id, nextRun);
-    saveRuntimeRun(runtimeDeps.repository, nextRun);
-    emit(
-      nextRun,
-      "external.fetch_succeeded",
-      `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 SourceVet 검증과 ACH 재평가를 완료했습니다.`,
-      {
-        toolName: EXTERNAL_OSINT_FETCH_TOOL,
-        evidenceCount: nextRun.outputs.resumeResult?.fetchedUnits.length ?? 0,
-        promotedEvidenceCount: nextRun.outputs.resumeResult?.promotedBundles.length ?? 0,
-        survivorDelta: nextRun.outputs.resumeResult?.survivorDelta
-      },
-      runtimeDeps
-    );
-    emit(nextRun, "run.succeeded", `런타임 실행 상태: ${formatRunStatusKo(nextRun.status)}.`, undefined, runtimeDeps);
+    try {
+      nextRun = await resumeApprovedExternalFetchRun(nextRun, resolved.approval, {
+        osint: config.osint,
+        osintFetchImpl: runtimeDeps.osintFetchImpl,
+        osintSearchInvoker: runtimeDeps.osintSearchInvoker
+      });
+      state.runs.set(nextRun.id, nextRun);
+      saveRuntimeRun(runtimeDeps.repository, nextRun);
+      emit(
+        nextRun,
+        "external.fetch_succeeded",
+        `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 SourceVet 검증과 ACH 재평가를 완료했습니다.`,
+        {
+          toolName: EXTERNAL_OSINT_FETCH_TOOL,
+          evidenceCount: nextRun.outputs.resumeResult?.fetchedUnits.length ?? 0,
+          promotedEvidenceCount: nextRun.outputs.resumeResult?.promotedBundles.length ?? 0,
+          survivorDelta: nextRun.outputs.resumeResult?.survivorDelta
+        },
+        runtimeDeps
+      );
+      emit(nextRun, "run.succeeded", `런타임 실행 상태: ${formatRunStatusKo(nextRun.status)}.`, undefined, runtimeDeps);
+    } catch (error) {
+      nextRun = markRuntimeResumeFailed(nextRun, resolved.approval, error);
+      state.runs.set(nextRun.id, nextRun);
+      saveRuntimeRun(runtimeDeps.repository, nextRun);
+      emit(
+        nextRun,
+        "run.resume_failed",
+        nextRun.error ?? `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 런타임 재개에 실패했습니다.`,
+        {
+          approvalId: resolved.approval.id,
+          toolName: resolved.approval.action.name,
+          error: (error as Error).message
+        },
+        runtimeDeps
+      );
+      emit(nextRun, "run.failed", `런타임 실행 상태: ${formatRunStatusKo(nextRun.status)}.`, undefined, runtimeDeps);
+    }
   }
 
   return nextRun;
@@ -465,6 +486,28 @@ function requireRun(state: RuntimeState, runId: string): RuntimeRun {
     throw new Error(`런타임 실행을 찾을 수 없습니다: ${runId}`);
   }
   return run;
+}
+
+function markRuntimeResumeFailed(run: RuntimeRun, approval: { id: string; action: { name: string } }, error: unknown): RuntimeRun {
+  const failedAt = nowIso();
+  const errorMessage = `${approval.action.name} 승인 후 런타임 재개 실패: ${(error as Error).message}`;
+  const answer = run.outputs.answer
+    ? {
+        ...run.outputs.answer,
+        warnings: [...run.outputs.answer.warnings, errorMessage]
+      }
+    : undefined;
+  return {
+    ...run,
+    status: "failed",
+    completedAt: failedAt,
+    updatedAt: failedAt,
+    error: errorMessage,
+    outputs: {
+      ...run.outputs,
+      answer
+    }
+  };
 }
 
 function emitNewEvents(previousRun: RuntimeRun, nextRun: RuntimeRun, deps: RuntimeDependencies): void {

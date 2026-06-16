@@ -10,7 +10,7 @@
         "--experimental-strip-types",
         "src/mcp/osint/stdio-server.ts"
       ],
-      "allowTools": ["search_news"],
+      "allowTools": ["search_news", "scrape_news"],
       "commandAllowlist": ["node"],
       "timeoutMs": 15000,
       "risk": "EXTERNAL"

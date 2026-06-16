@@ -17,11 +17,48 @@ export type OsintSearchSource = {
   queryPrefix?: string;
   querySuffix?: string;
   defaultFreshness?: "pd" | "pw" | "pm" | "py";
+  reliability?: string;
+  cooldownMs?: number;
+  backoffMultiplier?: number;
 };
 
 export type OsintSearchSourceRegistry = {
   version: string;
   sources: OsintSearchSource[];
+};
+
+export type OsintProviderErrorKind =
+  | "rate_limited"
+  | "timeout"
+  | "http_error"
+  | "config_invalid"
+  | "malformed_response"
+  | "unknown";
+
+export type OsintProviderWarningKind = OsintProviderErrorKind | "cooldown";
+
+export type OsintProviderWarning = {
+  sourceId: string;
+  sourceKind: OsintSearchSourceKind;
+  kind: OsintProviderWarningKind;
+  message: string;
+  status?: number;
+  cooldownUntil?: string;
+};
+
+export type OsintProviderTelemetry = {
+  runId: string;
+  sourceId: string;
+  sourceKind: OsintSearchSourceKind;
+  attempted: boolean;
+  failed: boolean;
+  latencyMs: number;
+  errorKind?: OsintProviderErrorKind;
+  status?: number;
+  failureCount?: number;
+  cooldownMs?: number;
+  cooldownUntil?: string;
+  message?: string;
 };
 
 export type OsintSearchRequest = {
@@ -45,5 +82,7 @@ export type OsintSearchResult = {
   units: KnowledgeUnit[];
   artifacts: OsintStoredArtifact[];
   warnings: string[];
+  providerWarnings?: OsintProviderWarning[];
+  providerTelemetry?: OsintProviderTelemetry[];
   blockedReason?: string;
 };

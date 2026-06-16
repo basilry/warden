@@ -165,7 +165,12 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
 }
 
 function logRuntimeEvent(event: RuntimeEvent): void {
-  const color = event.type === "run.failed" ? "\x1b[31m" : event.type === "approval.pending" ? "\x1b[33m" : "\x1b[36m";
+  const color =
+    event.type === "run.failed" || event.type === "run.resume_failed"
+      ? "\x1b[31m"
+      : event.type === "approval.pending"
+        ? "\x1b[33m"
+        : "\x1b[36m";
   const reset = "\x1b[0m";
   process.stdout.write(`${color}${formatEventTypeKo(event.type).padEnd(12)}${reset} ${event.runId} ${event.message}\n`);
 }
@@ -207,6 +212,7 @@ function formatEventTypeKo(type: RuntimeEvent["type"]): string {
   if (type === "approval.pending") return "승인대기";
   if (type === "approval.resolved") return "승인처리";
   if (type === "run.resume_ready") return "재개준비";
+  if (type === "run.resume_failed") return "재개실패";
   if (type === "external.fetch_succeeded") return "외부수집";
   if (type === "run.succeeded") return "실행성공";
   if (type === "run.failed") return "실행실패";
