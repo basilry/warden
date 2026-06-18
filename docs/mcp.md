@@ -48,6 +48,7 @@ Tools:
 |---|---|
 | `search_news` | Natural-language news/web/RSS search through allowlisted providers. |
 | `scrape_news` | HTTP fetch based HTML title/text/link extraction for approved URLs. |
+| `discover_news` | Source discovery through search/RSS followed by HTML scrape of discovered URLs. |
 
 Guardrails:
 
@@ -62,6 +63,7 @@ Fixtures:
 
 ```bash
 npm run demo:warden:osint-search-mcp
+npm run demo:warden:osint-discovery-mcp
 npm run demo:warden:osint-scrape-mcp
 npm run demo:warden:osint-provider-quality
 npm run demo:warden:osint-mcp-boundary
@@ -69,5 +71,6 @@ npm run demo:warden:osint-mcp-boundary
 
 Current limitation:
 
+- `discover_news` uses configured search/RSS providers to find URLs, then uses the static HTTP/HTML extractor.
 - `scrape_news` is a static HTTP/HTML extractor, not a JS-rendering browser scraper.
 - Runtime resume can accept an OSINT MCP invoker, but the default local CLI path still keeps the existing connector fallback unless an invoker is injected.

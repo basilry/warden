@@ -1,4 +1,5 @@
 import { loadWardenConfig, type WardenConfig } from "../../agent/config.ts";
+import { runOsintDiscoveryPipeline } from "../../connectors/osint/discovery.ts";
 import { scrapeHtmlDocuments } from "../../connectors/osint/html-scraper.ts";
 import type { OsintFetchLike } from "../../connectors/osint/http-client.ts";
 import { runNaturalLanguageOsintSearch } from "../../connectors/osint/search.ts";
@@ -78,6 +79,33 @@ export async function dispatchOsintToolCall<TName extends OsintMcpToolName>(
     return { result } as OsintMcpOutputByTool[TName];
   }
 
+  if (name === "discover_news") {
+    const parsed = parseDiscoverNewsInput(input);
+    if (!config.osint.liveOptIn) {
+      throw new Error("OSINT MCP discovery requires WARDEN_OSINT_LIVE_OPT_IN=true.");
+    }
+    const registry = loadOsintSearchSources(config.osint.searchSourcesPath);
+    const result = await runOsintDiscoveryPipeline(
+      {
+        query: parsed.query,
+        runId: parsed.runId,
+        approvalId: parsed.approvalId,
+        sourceIds: parsed.sourceIds,
+        preferredDomains: parsed.preferredDomains,
+        maxResults: parsed.maxResults ?? config.osint.maxResults,
+        maxScrapeChars: parsed.maxScrapeChars,
+        timeoutMs: config.osint.timeoutMs,
+        userAgent: config.osint.userAgent
+      },
+      registry,
+      {
+        fetchImpl: deps.fetchImpl,
+        now: deps.now
+      }
+    );
+    return { result } as OsintMcpOutputByTool[TName];
+  }
+
   throw new Error(`Unsupported OSINT MCP tool: ${String(name)}`);
 }
 
@@ -107,6 +135,15 @@ function parseSearchNewsInput(input: unknown): SearchNewsInput {
     maxResults,
     sourceIds: parseOptionalStringArray(input.sourceIds, "sourceIds"),
     preferredDomains: parseOptionalStringArray(input.preferredDomains, "preferredDomains")
+  };
+}
+
+function parseDiscoverNewsInput(input: unknown): SearchNewsInput & { maxScrapeChars?: number } {
+  const parsed = parseSearchNewsInput(input);
+  if (!isRecord(input)) return parsed;
+  return {
+    ...parsed,
+    maxScrapeChars: input.maxScrapeChars === undefined ? undefined : parseMaxChars(input.maxScrapeChars)
   };
 }
 

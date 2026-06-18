@@ -65,8 +65,10 @@ assertEqual(resumed.status, "succeeded", "resumed status");
 assertEqual(resumed.outputs.resumeResult?.fetchMode, "live-osint", "resume fetch mode");
 assertAtLeast(resumed.outputs.resumeResult?.fetchedUnits.length ?? 0, 1, "live fetched units");
 assertAtLeast(resumed.outputs.resumeResult?.promotedBundles.length ?? 0, 1, "live promoted bundles");
-assertAtLeast(resumed.outputs.resumeResult?.osintArtifacts?.length ?? 0, 2, "live artifacts");
+assertAtLeast(resumed.outputs.resumeResult?.osintArtifacts?.length ?? 0, 4, "live discovery and scrape artifacts");
 assertIncludes(resumed.outputs.resumeResult?.fetchedUnits[0]?.tags.join(",") ?? "", "live-osint", "live unit tag");
+assertIncludes(resumed.outputs.resumeResult?.fetchedUnits[0]?.tags.join(",") ?? "", "html-scrape", "scraped unit tag");
+assertIncludes(resumed.outputs.resumeResult?.fetchWarnings?.join("\n") ?? "", "Source discovery found", "discovery warning");
 assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "resumeFetchMode=live-osint", "live authority ref");
 
 console.log("WARDEN live OSINT resume regression: passed");

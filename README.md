@@ -64,6 +64,9 @@ warden
 - external_osint_fetch: 외부 호출은 사람의 승인이 있을 때까지 차단됩니다. (EXTERNAL)
 
 상태: 승인 대기
+승인 요청: external_osint_fetch (EXTERNAL)
+외부 호출은 사람의 승인이 있을 때까지 차단됩니다.
+external_osint_fetch를 승인하시겠습니까? 예(y) / 아니오(n):
 ```
 
 한 번만 실행하려면:
@@ -84,13 +87,21 @@ warden run "대한민국 및 동북아 공급망에 대해 알려줘" --answer-m
 warden run "대한민국 및 동북아 공급망에 대해 알려줘" --json
 ```
 
-대화형 모드에서 승인 대기 run을 재개하려면:
+승인 대기 상태가 되면 CLI가 직접 묻습니다.
+
+```text
+external_osint_fetch를 승인하시겠습니까? 예(y) / 아니오(n):
+```
+
+`y`, `yes`, `예`, `네`는 승인 후 즉시 resume하고, `n`, `no`, `아니오`, 엔터는 거부로 처리합니다.
+
+기존 승인 명령도 보조 경로로 유지됩니다.
 
 ```text
 /approve external_osint_fetch
 ```
 
-`warden run` 1회 실행은 상태를 유지하지 않고 종료되므로 승인 후 재개가 필요하면 `warden` 대화형 모드나 `warden server`를 사용합니다.
+`warden run`도 기본적으로 승인 대기 시 y/n을 묻고, 승인하면 같은 실행 안에서 바로 resume합니다. 입력을 받을 수 없는 자동화 환경에서는 승인 대기 상태를 출력한 뒤 종료합니다. 자동화에서 질문을 끄려면 `--no-approval-prompt`를 사용합니다.
 
 HTTP runtime server를 직접 띄우려면:
 
@@ -127,7 +138,7 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
   -d '{"actor":"operator","reason":"approved"}'
 ```
 
-기본 경로는 offline-first입니다. live LLM, live MCP, 외부 네트워크 없이 mock model proposal, policy gate, WARDEN internal MCP-style tool, approval queue, 승인 후 deterministic fetch fixture까지 검증합니다. `WARDEN_OSINT_LIVE_OPT_IN=true`를 명시하면 승인 후 live OSINT 검색 provider를 사용할 수 있습니다. 정적 HTML report는 기본 실행 경로가 아니라 `npm run demo:warden:report`로 생성하는 선택 산출물입니다.
+기본 경로는 offline-first입니다. live LLM, live MCP, 외부 네트워크 없이 mock model proposal, policy gate, WARDEN internal MCP-style tool, approval queue, 승인 후 deterministic fetch fixture까지 검증합니다. `WARDEN_OSINT_LIVE_OPT_IN=true`를 명시하면 승인 후 WARDEN이 source discovery를 수행하고 발견 URL을 HTML scrape로 후속 수집합니다. 정적 HTML report는 기본 실행 경로가 아니라 `npm run demo:warden:report`로 생성하는 선택 산출물입니다.
 
 ## Main Commands
 
@@ -140,6 +151,7 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
 | `warden run "<objective>" --json` | answer object 포함 JSON 출력 |
 | `/approve [approvalId\|toolName]` | 대화형 CLI에서 승인 대기 action 승인 후 재개 |
 | `/reject [approvalId\|toolName]` | 대화형 CLI에서 승인 대기 action 거부 |
+| `--no-approval-prompt` | `warden run`/chat에서 승인 y/n 질문 비활성화 |
 | `warden server` | HTTP runtime server 실행 |
 | `npm start` | WARDEN Agent Runtime Server 실행 |
 | `npm run server` | `npm start`와 동일 |
@@ -166,6 +178,7 @@ curl -sS -X POST http://127.0.0.1:8787/runs/<runId>/approvals/<approvalId>/appro
 | `npm run demo:warden:live-osint-resume` | live OSINT search provider + ACH resume regression |
 | `npm run demo:warden:resume-failure` | approval 후 live resume 실패 상태 처리 regression |
 | `npm run demo:warden:osint-search-mcp` | natural-language OSINT search MCP regression |
+| `npm run demo:warden:osint-discovery-mcp` | search/RSS discovery 후 HTML scrape MCP regression |
 | `npm run demo:warden:osint-mcp-boundary` | runtime resume의 OSINT MCP invoker 우선 경계 regression |
 | `npm run demo:warden:osint-scrape-mcp` | approved URL HTML scrape MCP regression |
 | `npm run demo:warden:osint-provider-quality` | OSINT provider telemetry/rate-limit/reliability regression |
@@ -213,7 +226,7 @@ warden server
 - 내부 WARDEN specialist team이 ACH, SourceVet, verifier trace를 생성합니다.
 - 2회차 이후 외부 OSINT 성격의 `external_osint_fetch`는 자동 실행하지 않고 approval pending으로 남깁니다.
 - 승인 후 재개는 기본적으로 deterministic local fetch fixture를 반영합니다.
-- `WARDEN_OSINT_LIVE_OPT_IN=true`이면 승인 후 자연어 objective를 OSINT 검색 provider로 전달하고, 결과를 SourceVet 검토 후 ACH 재평가에 투입합니다.
+- `WARDEN_OSINT_LIVE_OPT_IN=true`이면 승인 후 자연어 objective로 source discovery를 수행하고, 발견 URL을 HTML scrape한 뒤 SourceVet 검토 후 ACH 재평가에 투입합니다.
 - 모델 출력은 실행 권한이 아니라 proposal로만 저장됩니다.
 
 런타임 smoke test:
@@ -239,12 +252,15 @@ WARDEN_OSINT_LIVE_OPT_IN=true warden
 fixtures/osint/search-sources.json
 ```
 
-포함된 provider:
+기본 discovery provider:
 
 - GDELT DOC article search: 공개 뉴스 검색, API key 불필요
-- Brave Web Search: `BRAVE_SEARCH_API_KEY`가 있을 때 사용
-- Brave Investing.com scoped search: `site:investing.com` 기반 시장/공급망 뉴스 검색
 - Yonhap RSS: 한국어 국제 뉴스 보강
+
+선택 provider:
+
+- Brave Web Search: `fixtures/osint/search-sources.json`에서 enabled로 바꾸고 `BRAVE_SEARCH_API_KEY`가 있을 때 사용
+- Brave Investing.com scoped search: `site:investing.com` 기반 시장/공급망 뉴스 검색
 
 검색 provider에는 reliability profile, cooldown, backoff 설정을 둘 수 있습니다. 429, timeout, HTTP error는 provider telemetry와 warning으로 남습니다.
 
@@ -256,6 +272,7 @@ WARDEN_OSINT_SEARCH_ENABLED=true
 WARDEN_OSINT_SEARCH_SOURCES=fixtures/osint/search-sources.json
 WARDEN_OSINT_MAX_RESULTS=5
 WARDEN_OSINT_TIMEOUT_MS=8000
+# Optional only if you enable Brave providers in fixtures/osint/search-sources.json
 BRAVE_SEARCH_API_KEY=...
 ```
 
@@ -264,7 +281,8 @@ BRAVE_SEARCH_API_KEY=...
 ```text
 사용자 자연어 objective
 -> external_osint_fetch approval
--> OSINT search MCP/connector
+-> source discovery (GDELT/RSS/optional provider)
+-> discovered URL scrape
 -> KnowledgeUnit normalization
 -> SourceVet 검토
 -> 통과 evidence만 ACH 재평가
@@ -283,6 +301,7 @@ OSINT MCP에는 자연어 검색과 HTML scrape 도구가 있습니다.
 |---|---|---|
 | `search_news` | 자연어 query를 allowlisted search/RSS provider로 검색 | `WARDEN_OSINT_LIVE_OPT_IN=true` |
 | `scrape_news` | 승인된 http/https URL의 HTML title/text/link를 추출 | `WARDEN_OSINT_LIVE_OPT_IN=true`, localhost/private IP 차단 |
+| `discover_news` | search/RSS로 URL을 발견하고 HTML scrape까지 수행 | `WARDEN_OSINT_LIVE_OPT_IN=true`, localhost/private IP 차단 |
 
 HTML scrape는 현재 HTTP fetch 기반 1차 구현입니다. JS 렌더링, 로그인, 강한 bot 방어가 필요한 페이지는 후속 Web Scraper MCP 단계에서 보강합니다.
 
@@ -387,7 +406,7 @@ printenv OPENAI_API_KEY | codex login --with-api-key
 
 WARDEN은 `~/.codex/auth.json`을 읽지 않습니다. Codex OAuth/API-key 인증은 Codex CLI가 담당합니다. WARDEN은 Codex output도 proposal로만 취급합니다.
 
-WARDEN이 직접 `OPENAI_API_KEY`를 읽는 경우는 `WARDEN_MODEL_PROVIDER=openai-compatible`, `WARDEN_OPENAI_DRY_RUN=0`, `WARDEN_OPENAI_LIVE_OPT_IN=true`를 모두 켠 live OpenAI-compatible 경로뿐입니다.
+WARDEN이 직접 `OPENAI_API_KEY`를 읽는 경우는 `WARDEN_MODEL_PROVIDER=openai-compatible`, `WARDEN_OPENAI_DRY_RUN=0`, `WARDEN_OPENAI_LIVE_OPT_IN=true`를 모두 켠 live OpenAI-compatible 경로뿐입니다. 이 값은 LLM 호출 opt-in이고, 웹 수집 opt-in이 아닙니다. 웹 source discovery/scrape는 별도로 `WARDEN_OSINT_LIVE_OPT_IN=true`가 필요합니다.
 
 자세한 내용:
 

@@ -1,8 +1,13 @@
+import { loadWardenConfig } from "../src/agent/config.ts";
 import { createMockModelAdapter } from "../src/agent/models/mock-model.ts";
 import { approveRuntimeApproval, createRuntimeState, startRuntimeRun } from "../src/runtime/loop.ts";
 import type { RuntimeRun } from "../src/runtime/types.ts";
 
 const state = createRuntimeState();
+const config = loadWardenConfig({
+  WARDEN_MODEL_PROVIDER: "mock",
+  WARDEN_OSINT_LIVE_OPT_IN: "false"
+});
 const run = startRuntimeRun(
   state,
   {
@@ -10,7 +15,7 @@ const run = startRuntimeRun(
     maxIterations: 2,
     answerMode: "deterministic"
   },
-  { model: createMockModelAdapter() }
+  { config, model: createMockModelAdapter() }
 );
 
 await waitForRun(run);
@@ -25,7 +30,7 @@ const resumed = await approveRuntimeApproval(state, run.id, {
   approvalId,
   actor: "sourcevet-ach-resume-regression",
   reason: "P11 regression: approve external fetch and require SourceVet plus ACH rerun."
-});
+}, { config });
 
 assertEqual(resumed.status, "succeeded", "resumed status");
 assertTruthy(resumed.outputs.resumeResult, "resume result");

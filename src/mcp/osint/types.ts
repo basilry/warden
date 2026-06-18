@@ -1,8 +1,9 @@
 import type { Risk } from "../../agent/types.ts";
+import type { OsintDiscoveryResult } from "../../connectors/osint/discovery.ts";
 import type { HtmlScrapeResult } from "../../connectors/osint/scrape-types.ts";
 import type { OsintSearchResult } from "../../connectors/osint/search-types.ts";
 
-export const OSINT_MCP_TOOL_NAMES = ["search_news", "scrape_news"] as const;
+export const OSINT_MCP_TOOL_NAMES = ["search_news", "scrape_news", "discover_news"] as const;
 
 export type OsintMcpToolName = (typeof OSINT_MCP_TOOL_NAMES)[number];
 
@@ -32,14 +33,24 @@ export type ScrapeNewsOutput = {
   result: HtmlScrapeResult;
 };
 
+export type DiscoverNewsInput = SearchNewsInput & {
+  maxScrapeChars?: number;
+};
+
+export type DiscoverNewsOutput = {
+  result: OsintDiscoveryResult;
+};
+
 export type OsintMcpInputByTool = {
   search_news: SearchNewsInput;
   scrape_news: ScrapeNewsInput;
+  discover_news: DiscoverNewsInput;
 };
 
 export type OsintMcpOutputByTool = {
   search_news: SearchNewsOutput;
   scrape_news: ScrapeNewsOutput;
+  discover_news: DiscoverNewsOutput;
 };
 
 export function isOsintMcpToolName(value: string): value is OsintMcpToolName {

@@ -22,7 +22,10 @@ type CliOptions = {
   json: boolean;
   port: number;
   verbose: boolean;
+  approvalPrompt: boolean;
 };
+
+type ApprovalQuestion = (prompt: string) => Promise<string>;
 
 const DOTENV_LOAD = loadDotEnvFile();
 
@@ -31,7 +34,8 @@ const DEFAULT_OPTIONS: CliOptions = {
   iterations: 2,
   json: false,
   port: Number(process.env.WARDEN_PORT ?? "8787"),
-  verbose: false
+  verbose: false,
+  approvalPrompt: process.env.WARDEN_APPROVAL_PROMPT !== "0"
 };
 
 const COLOR = {
@@ -91,6 +95,10 @@ function parseOptions(args: string[]): { options: CliOptions; rest: string[] } {
       options.json = true;
       continue;
     }
+    if (arg === "--no-approval-prompt") {
+      options.approvalPrompt = false;
+      continue;
+    }
     if (arg === "--answer-mode") {
       const value = args[index + 1];
       index += 1;
@@ -146,7 +154,9 @@ async function runChat(options: CliOptions): Promise<void> {
         output.write(`HTTP 런타임 서버를 시작하려면 ${color("warden server", "cyan")}를 실행하세요.\n`);
         continue;
       }
-      await runObjective(line, state, config, options);
+      await runObjective(line, state, config, options, {
+        approvalQuestion: (question) => rl.question(question)
+      });
     }
   } finally {
     rl.close();
@@ -163,7 +173,17 @@ async function runOneShot(objective: string, options: CliOptions): Promise<void>
   if (!options.json) {
     printCliHeader(config, options);
   }
-  await runObjective(trimmed, state, config, options);
+  let rl: ReturnType<typeof createInterface> | undefined;
+  try {
+    if (shouldPromptForApprovals(options)) {
+      rl = createInterface({ input, output });
+    }
+    await runObjective(trimmed, state, config, options, {
+      approvalQuestion: rl ? (question) => rl!.question(question) : undefined
+    });
+  } finally {
+    rl?.close();
+  }
 }
 
 async function runServer(options: CliOptions): Promise<void> {
@@ -193,7 +213,8 @@ async function runObjective(
   objective: string,
   state: RuntimeState,
   config: WardenConfig,
-  options: CliOptions
+  options: CliOptions,
+  promptOptions: { approvalQuestion?: ApprovalQuestion } = {}
 ): Promise<void> {
   if (!options.json) {
     output.write(`${color("목표", "bold")}: ${objective}\n`);
@@ -216,6 +237,7 @@ async function runObjective(
     return;
   }
   printRunResult(run);
+  await promptForPendingApprovals(run, state, config, options, promptOptions.approvalQuestion);
 }
 
 async function resolveApprovalCommand(
@@ -256,6 +278,83 @@ async function resolveApprovalCommand(
     return;
   }
   printRunResult(nextRun);
+}
+
+async function promptForPendingApprovals(
+  run: RuntimeRun,
+  state: RuntimeState,
+  config: WardenConfig,
+  options: CliOptions,
+  approvalQuestion: ApprovalQuestion | undefined
+): Promise<void> {
+  if (!shouldPromptForApprovals(options)) return;
+  if (!approvalQuestion) return;
+
+  let currentRun = run;
+  while (currentRun.status === "waiting_approval") {
+    const approval = currentRun.approvals.find((item) => item.status === "pending");
+    if (!approval) return;
+    const decision = await askApprovalDecision(approvalQuestion, approval);
+    if (decision === "unavailable") {
+      output.write(`${color("[승인]", "yellow")} 입력을 받을 수 없어 승인 대기 상태로 종료합니다. 대화형 모드에서는 /approve ${approval.action.name}을 사용할 수 있습니다.\n`);
+      return;
+    }
+
+    currentRun =
+      decision === "approve"
+        ? await approveRuntimeApproval(
+            state,
+            currentRun.id,
+            {
+              approvalId: approval.id,
+              actor: "warden-cli",
+              reason: "CLI operator approved the pending runtime action."
+            },
+            { config, onEvent: (event) => printRuntimeEvent(event, options) }
+          )
+        : rejectRuntimeApproval(
+            state,
+            currentRun.id,
+            {
+              approvalId: approval.id,
+              actor: "warden-cli",
+              reason: "CLI operator rejected the pending runtime action."
+            },
+            { config, onEvent: (event) => printRuntimeEvent(event, options) }
+          );
+    printRunResult(currentRun);
+  }
+}
+
+async function askApprovalDecision(
+  approvalQuestion: ApprovalQuestion,
+  approval: RuntimeRun["approvals"][number]
+): Promise<"approve" | "reject" | "unavailable"> {
+  output.write(`${color("[승인 요청]", "yellow")} ${approval.action.name} (${approval.decision.risk})\n`);
+  output.write(`${translateReasonKo(approval.decision.reason)}\n`);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let answer: string;
+    try {
+      answer = (await approvalQuestion(`${approval.action.name}${objectParticle(approval.action.name)} 승인하시겠습니까? 예(y) / 아니오(n): `)).trim();
+    } catch {
+      return "unavailable";
+    }
+    const decision = parseApprovalDecision(answer);
+    if (decision) return decision;
+    output.write("y 또는 n으로 입력하세요. 기본값은 아니오입니다.\n");
+  }
+  return "reject";
+}
+
+function parseApprovalDecision(value: string): "approve" | "reject" | undefined {
+  const normalized = value.trim().toLowerCase();
+  if (["y", "yes", "예", "네", "승인", "ㅇ", "ㅇㅇ"].includes(normalized)) return "approve";
+  if (["", "n", "no", "아니오", "아니요", "거부", "ㄴ", "ㄴㄴ"].includes(normalized)) return "reject";
+  return undefined;
+}
+
+function shouldPromptForApprovals(options: CliOptions): boolean {
+  return options.approvalPrompt && !options.json;
 }
 
 async function waitForRun(run: RuntimeRun): Promise<void> {
@@ -584,6 +683,7 @@ function printHelp(): void {
   output.write("  -i, --iterations <n>           루프 반복 횟수, 기본 2\n");
   output.write("  -p, --port <n>                 서버 포트, 기본 WARDEN_PORT 또는 8787\n");
   output.write("  -v, --verbose                  모든 런타임 이벤트 표시\n");
+  output.write("  --no-approval-prompt           승인 대기 시 y/n 질문 없이 상태만 출력\n");
 }
 
 function parseAnswerMode(value: string | undefined): RuntimeAnswerMode {

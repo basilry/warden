@@ -7,9 +7,9 @@ import {
   loadOsintAllowlist,
   selectAllowlistedSourceUrls
 } from "../connectors/osint/allowlist.ts";
+import { runOsintDiscoveryPipeline } from "../connectors/osint/discovery.ts";
 import { normalizeOsintResponseToKnowledgeUnits, redactOsintPayload } from "../connectors/osint/normalizer.ts";
 import { loadOsintSearchSources } from "../connectors/osint/search-sources.ts";
-import { runNaturalLanguageOsintSearch } from "../connectors/osint/search.ts";
 import type { OsintSearchSourceRegistry } from "../connectors/osint/search-types.ts";
 import type {
   OsintAllowlist,
@@ -128,7 +128,7 @@ function shouldUseNaturalLanguageSearch(input: ApprovedLiveOsintFetchInput): boo
 
 async function runLiveSearch(input: ApprovedLiveOsintFetchInput) {
   try {
-    return await runNaturalLanguageOsintSearch(
+    return await runOsintDiscoveryPipeline(
       {
         query: input.query,
         runId: input.runId,
