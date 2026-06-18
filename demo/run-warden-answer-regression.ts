@@ -2,12 +2,17 @@ import { spawn } from "node:child_process";
 
 const result = await runCli(["run", "대한민국 및 동북아 공급망에 대해 알려줘", "--iterations", "2"]);
 
-assertIncludes(result.stdout, "답변", "answer heading");
-assertIncludes(result.stdout, "핵심 판단", "findings heading");
-assertIncludes(result.stdout, "근거", "evidence heading");
-assertIncludes(result.stdout, "한계", "uncertainty heading");
-assertIncludes(result.stdout, "승인 필요", "approval heading");
-assertIncludes(result.stdout, "제재 우회 비축", "ACH survivor");
+assertIncludes(result.stdout, "결론", "compact verdict heading");
+assertIncludes(result.stdout, "현재 판단", "decision label");
+assertIncludes(result.stdout, "판정 수준", "verdict status label");
+assertIncludes(result.stdout, "분석계획", "investigation plan event");
+assertIncludes(result.stdout, "근거수집", "evidence collection heading");
+assertIncludes(result.stdout, "참조한 자료", "evidence citation heading");
+assertIncludes(result.stdout, "분석/검증", "verification heading");
+assertIncludes(result.stdout, "신뢰도 개선", "confidence improvement heading");
+assertIncludes(result.stdout, "승인/다음 단계", "approval and next steps heading");
+assertIncludes(result.stdout, "도메인: 공급망", "dynamic supply-chain domain");
+assertIncludes(result.stdout, "ACH: 생존 가설 0개", "approval preflight before ACH");
 assertIncludes(result.stdout, "external_osint_fetch", "blocked approval");
 assertIncludes(result.stdout, "상태: 승인 대기", "approval status");
 
@@ -19,9 +24,8 @@ const assisted = await runCli([
   "--answer-mode",
   "assisted"
 ]);
-assertIncludes(assisted.stdout, "답변 초안 수신", "assisted answer model event");
-assertIncludes(assisted.stdout, "모델 보조 초안", "assisted answer draft");
-assertIncludes(assisted.stdout, "권위 참조:", "assisted authority references");
+assertIncludes(assisted.stdout, "승인 대기", "assisted waits for approval before final answer drafting");
+assertIncludes(assisted.stdout, "결론", "assisted compact verdict");
 
 const json = await runCli(["run", "대한민국 및 동북아 공급망에 대해 알려줘", "--iterations", "2", "--json"]);
 const parsed = JSON.parse(json.stdout) as {
@@ -31,8 +35,8 @@ const parsed = JSON.parse(json.stdout) as {
 };
 assertEqual(parsed.status, "waiting_approval", "json status");
 assertEqual(parsed.answerMode, "deterministic", "json answer mode");
-if (!parsed.outputs?.answer?.directAnswer?.includes("제재 우회 비축")) {
-  throw new Error(`json answer missing survivor summary: ${json.stdout}`);
+if (!parsed.outputs?.answer?.directAnswer?.includes("아직 확정 가능한 WARDEN 분석 결과가 없습니다")) {
+  throw new Error(`json answer missing approval-preflight summary: ${json.stdout}`);
 }
 if (!parsed.outputs.answer.blockedActions?.some((item) => item.includes("external_osint_fetch"))) {
   throw new Error(`json answer missing blocked action: ${json.stdout}`);
@@ -47,7 +51,8 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string 
       env: {
         ...process.env,
         NO_COLOR: "1",
-        WARDEN_MODEL_PROVIDER: "mock"
+        WARDEN_MODEL_PROVIDER: "mock",
+        WARDEN_APPROVAL_PROMPT: "0"
       },
       stdio: ["ignore", "pipe", "pipe"]
     });

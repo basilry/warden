@@ -11,6 +11,7 @@ import type { RuntimeRun } from "../src/runtime/types.ts";
 const rootDir = mkdtempSync(join(tmpdir(), "warden-runtime-persistence-"));
 const config = loadWardenConfig({
   WARDEN_MODEL_PROVIDER: "mock",
+  WARDEN_OSINT_LIVE_OPT_IN: "false",
   WARDEN_STORAGE: "jsonl",
   WARDEN_STORAGE_DIR: rootDir
 });
@@ -48,7 +49,7 @@ const approved = await approveRuntimeApproval(secondServer.state, created.id, {
   approvalId,
   actor: "runtime-persistence-regression",
   reason: "Restart simulation approved restored pending runtime action."
-});
+}, { config });
 
 assertEqual(approved.status, "succeeded", "approved restored status");
 assertAtLeast(approved.outputs.fetchedEvidence?.length ?? 0, 1, "approved fetched evidence");

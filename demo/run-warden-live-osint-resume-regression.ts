@@ -69,7 +69,7 @@ assertAtLeast(resumed.outputs.resumeResult?.osintArtifacts?.length ?? 0, 4, "liv
 assertIncludes(resumed.outputs.resumeResult?.fetchedUnits[0]?.tags.join(",") ?? "", "live-osint", "live unit tag");
 assertIncludes(resumed.outputs.resumeResult?.fetchedUnits[0]?.tags.join(",") ?? "", "html-scrape", "scraped unit tag");
 assertIncludes(resumed.outputs.resumeResult?.fetchWarnings?.join("\n") ?? "", "Source discovery found", "discovery warning");
-assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "resumeFetchMode=live-osint", "live authority ref");
+assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "재개수집모드=실시간 OSINT", "live authority ref");
 
 console.log("WARDEN live OSINT resume regression: passed");
 

@@ -43,6 +43,7 @@ export async function dispatchOsintToolCall<TName extends OsintMcpToolName>(
         sourceIds: parsed.sourceIds,
         preferredDomains: parsed.preferredDomains,
         maxResults: parsed.maxResults ?? config.osint.maxResults,
+        maxSources: config.osint.maxSourcesPerQuery,
         timeoutMs: config.osint.timeoutMs,
         userAgent: config.osint.userAgent
       },
@@ -93,6 +94,7 @@ export async function dispatchOsintToolCall<TName extends OsintMcpToolName>(
         sourceIds: parsed.sourceIds,
         preferredDomains: parsed.preferredDomains,
         maxResults: parsed.maxResults ?? config.osint.maxResults,
+        maxSources: config.osint.maxSourcesPerQuery,
         maxScrapeChars: parsed.maxScrapeChars,
         timeoutMs: config.osint.timeoutMs,
         userAgent: config.osint.userAgent

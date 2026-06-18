@@ -16,7 +16,7 @@ export function createMockModelAdapter(fixtures: MockModelFixtures = {}): ModelA
           inputTokens: estimateTokens(request.prompt),
           outputTokens: estimateTokens(JSON.stringify(output))
         },
-        warnings: ["mock model output is a proposal, not an execution authority"]
+        warnings: ["mock 모델 출력은 실행 권한이 아니라 제안입니다"]
       };
     }
   };

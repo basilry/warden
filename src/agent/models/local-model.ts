@@ -31,9 +31,9 @@ export function createLocalModelAdapter(config: LocalModelConfig = {}): ModelAda
         output: payload as T,
         warnings: [
           config.dryRun === false
-            ? "local live execution is not wired yet; returning proposal payload"
-            : "local dry-run only: no local model process was launched",
-          "local model output is treated as a proposal, never as execution authority"
+            ? "로컬 실시간 실행은 아직 연결되지 않아 제안 payload를 반환합니다"
+            : "로컬 dry-run 모드라 모델 프로세스를 실행하지 않았습니다",
+          "로컬 모델 출력은 실행 권한이 아니라 제안으로만 취급됩니다"
         ]
       };
     }

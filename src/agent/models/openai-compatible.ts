@@ -33,8 +33,8 @@ export function createOpenAICompatibleAdapter(config: OpenAICompatibleConfig): M
           model: config.model,
           output: redactPayload(payload) as T,
           warnings: [
-            "dry-run only: no network request was sent",
-            "live model output would still be treated as a proposal"
+            "dry-run 모드라 네트워크 요청을 보내지 않았습니다",
+            "실시간 모델 출력도 실행 권한이 아니라 제안으로만 취급됩니다"
           ]
         };
       }
@@ -64,7 +64,7 @@ export function createOpenAICompatibleAdapter(config: OpenAICompatibleConfig): M
         id: request.id,
         model: config.model,
         output: (await response.json()) as T,
-        warnings: ["live model output is treated as a proposal, never as execution authority"]
+        warnings: ["실시간 모델 출력은 실행 권한이 아니라 제안으로만 취급됩니다"]
       };
     }
   };

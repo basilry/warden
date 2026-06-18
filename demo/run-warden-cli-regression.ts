@@ -3,13 +3,13 @@ import { spawn } from "node:child_process";
 const result = await runCli(["run", "Runtime CLI regression objective.", "--iterations", "2"]);
 
 assertIncludes(result.stdout, "WARDEN CLI", "header");
-assertIncludes(result.stdout, "계획 제안을 요청하는 중", "model request progress");
-assertIncludes(result.stdout, "run_warden_team를 정책/MCP로 전달하는 중", "tool routing progress");
-assertIncludes(result.stdout, "run_warden_team: 성공", "team tool result");
-assertIncludes(result.stdout, "소요 시간:", "elapsed summary");
-assertIncludes(result.stdout, "추적 이벤트:", "trace summary");
+assertIncludes(result.stdout, "분석계획", "investigation plan stage");
+assertIncludes(result.stdout, "external_osint_fetch를 정책/MCP로 전달하는 중", "external approval preflight progress");
+assertIncludes(result.stdout, "external_osint_fetch: 차단됨", "external approval blocked result");
+assertIncludes(result.stdout, "상태: 승인 대기 · 소요", "elapsed summary");
+assertIncludes(result.stdout, "팀 실행:", "team run summary");
 assertIncludes(result.stdout, "상태: 승인 대기", "approval status");
-assertIncludes(result.stdout, "ACH 생존 가설:", "survivor summary");
+assertIncludes(result.stdout, "ACH: 생존 가설", "survivor summary");
 
 console.log("WARDEN CLI regression: passed");
 
@@ -20,7 +20,8 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string 
       env: {
         ...process.env,
         NO_COLOR: "1",
-        WARDEN_MODEL_PROVIDER: "mock"
+        WARDEN_MODEL_PROVIDER: "mock",
+        WARDEN_APPROVAL_PROMPT: "0"
       },
       stdio: ["ignore", "pipe", "pipe"]
     });

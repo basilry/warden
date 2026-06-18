@@ -57,7 +57,7 @@ export function createOsintProviderQualityTracker(nowMs: () => number = Date.now
       return { source, startedAtMs: nowMs() };
     },
     activeCooldown(source) {
-      const state = states.get(providerKey(source));
+      const state = activeStateFor(source, states, nowMs());
       if (!state?.cooldownUntilMs || state.cooldownUntilMs <= nowMs()) return undefined;
       return buildWarning(source, "cooldown", `Provider ${source.id} is in cooldown until ${toIso(state.cooldownUntilMs)}.`, {
         cooldownUntil: toIso(state.cooldownUntilMs)
@@ -84,6 +84,12 @@ export function createOsintProviderQualityTracker(nowMs: () => number = Date.now
         state.cooldownUntilMs = nowMs() + cooldownMs;
       }
       states.set(providerKey(attempt.source), state);
+      if (errorKind === "rate_limited" && attempt.source.rateLimitKey) {
+        const shared = states.get(sharedRateLimitKey(attempt.source)) ?? { failureCount: 0 };
+        shared.failureCount += 1;
+        shared.cooldownUntilMs = Math.max(shared.cooldownUntilMs ?? 0, state.cooldownUntilMs ?? nowMs());
+        states.set(sharedRateLimitKey(attempt.source), shared);
+      }
 
       const message = providerErrorMessage(error);
       const warning = buildWarning(attempt.source, errorKind, `Provider ${attempt.source.id} ${errorKind}: ${message}`, {
@@ -177,6 +183,21 @@ function buildWarning(
 
 function providerKey(source: OsintSearchSource): string {
   return `${source.kind}:${source.id}`;
+}
+
+function sharedRateLimitKey(source: OsintSearchSource): string {
+  return `${source.kind}:rate-limit:${source.rateLimitKey ?? source.id}`;
+}
+
+function activeStateFor(
+  source: OsintSearchSource,
+  states: Map<string, ProviderState>,
+  nowMs: number
+): ProviderState | undefined {
+  const own = states.get(providerKey(source));
+  const shared = source.rateLimitKey ? states.get(sharedRateLimitKey(source)) : undefined;
+  const candidates = [own, shared].filter((state): state is ProviderState => Boolean(state?.cooldownUntilMs && state.cooldownUntilMs > nowMs));
+  return candidates.sort((left, right) => (right.cooldownUntilMs ?? 0) - (left.cooldownUntilMs ?? 0))[0];
 }
 
 function elapsedMs(startedAtMs: number, endedAtMs: number): number {

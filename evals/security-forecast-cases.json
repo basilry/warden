@@ -1,0 +1,50 @@
+{
+  "evalSetId": "p28-security-forecast-golden-v0",
+  "version": "2026-06-18",
+  "description": "Small deterministic security-forecast fixture set for ontology expansion checks. This is not the full 20-case suite.",
+  "cases": [
+    {
+      "caseId": "sec-forecast-taiwan-blockade-001",
+      "domain": "security_forecast",
+      "question": "Taiwan semiconductor blockade early warning indicators",
+      "golden": {
+        "actors": ["pla_eastern_theater_command", "taiwan_mnd", "taiwan_coast_guard", "tsmc"],
+        "regions": ["taiwan", "taiwan_strait"],
+        "sectors": ["semiconductors", "maritime_logistics"],
+        "signals": ["maritime_exclusion_zone", "vessel_inspection_boarding", "shipping_insurance_premium", "semiconductor_fab_output_guidance"],
+        "risks": ["taiwan_strait_blockade", "semiconductor_supply_shock"],
+        "sourceHints": ["taiwan_mnd_daily_activity", "ais_maritime_tracks", "port_authority_notices", "company_filings_guidance"],
+        "scenarios": ["scenario_taiwan_strait_blockade"]
+      }
+    },
+    {
+      "caseId": "sec-forecast-export-control-002",
+      "domain": "security_forecast",
+      "question": "Export controls and entity list changes affecting Northeast Asia chips",
+      "golden": {
+        "actors": ["us_bis", "japan_meti", "korea_motie"],
+        "regions": ["united_states", "japan", "south_korea", "northeast_asia"],
+        "sectors": ["semiconductors", "critical_minerals"],
+        "signals": ["export_license_rule_change", "entity_list_update", "customs_hs_code_shift"],
+        "risks": ["export_controls", "sanctions_evasion", "semiconductor_supply_shock"],
+        "sourceHints": ["export_control_registers", "sanctions_lists", "customs_trade_data"],
+        "scenarios": ["scenario_sanctions_export_controls_cascade"]
+      }
+    },
+    {
+      "caseId": "sec-forecast-maritime-003",
+      "domain": "security_forecast",
+      "question": "Maritime chokepoint disruption with war risk insurance and port congestion",
+      "golden": {
+        "actors": ["shipping_insurers", "port_authorities"],
+        "regions": ["global_maritime", "taiwan_strait"],
+        "sectors": ["maritime_logistics", "energy"],
+        "signals": ["shipping_insurance_premium", "port_congestion_rerouting"],
+        "risks": ["maritime_chokepoint_disruption"],
+        "sourceHints": ["ais_maritime_tracks", "port_authority_notices", "shipping_insurance_market"],
+        "scenarios": ["scenario_maritime_chokepoint_disruption"]
+      }
+    }
+  ]
+}
+

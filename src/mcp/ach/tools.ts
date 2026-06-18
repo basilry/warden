@@ -4,7 +4,7 @@ import {
   buildAchAnalysisResult,
   openCaseFromFrame
 } from "../../agent/tools/ach-local.ts";
-import type { AchCaseRecord, CaseFrame, EvidenceBundle } from "../../agent/types.ts";
+import type { AchCaseRecord, AnalysisDomain, CaseFrame, EvidenceBundle } from "../../agent/types.ts";
 import {
   isAchMcpToolName,
   type AchMcpInputByTool,
@@ -69,7 +69,19 @@ function isCaseFrame(value: unknown): value is CaseFrame {
     Array.isArray(value.hypotheses) &&
     value.hypotheses.every((item) => typeof item === "string") &&
     typeof value.nullHypothesis === "string" &&
-    value.domain === "defense_supply_chain"
+    isAnalysisDomain(value.domain)
+  );
+}
+
+function isAnalysisDomain(value: unknown): value is AnalysisDomain {
+  return (
+    value === "defense_supply_chain" ||
+    value === "security" ||
+    value === "geopolitics" ||
+    value === "supply_chain" ||
+    value === "defense" ||
+    value === "economic_security" ||
+    value === "mixed"
   );
 }
 

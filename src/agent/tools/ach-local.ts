@@ -211,10 +211,17 @@ function isVerdict(value: unknown): value is Verdict {
 }
 
 function suggestRfi(survivors: string[]): string | undefined {
-  if (survivors.length <= 1) {
-    return "잔여 리스크 확인: 제3국 경유 물량의 최종 수하인과 재고 이동 기록을 추가 확인한다.";
+  const joined = survivors.join(" ");
+  if (/taiwan|대만|invasion|침공|blockade|봉쇄|amphibious|상륙|pla|인민해방군/i.test(joined)) {
+    return `생존 가설(${survivors.join(", ")})을 가르기 위해 상륙함/보급함 집결, 미사일 훈련 지속성, 항행 경보, 해상보험/선박 우회, 미국/일본 대응태세를 추가 확인한다.`;
   }
-  return `생존 가설(${survivors.join(", ")})을 가르기 위해 제3국 경유 물량의 최종 수하인, 대체 공급처 장애 보고, 재고 이동 기록을 확인한다.`;
+  if (/demand|inventory|semiconductor|supply|공급망|수요|재고|반도체|물류/i.test(joined)) {
+    return `생존 가설(${survivors.join(", ")})을 가르기 위해 핵심 품목 재고, 대체 공급처 장애, 운임/통관 지연, 수요처 발주 변화를 추가 확인한다.`;
+  }
+  if (survivors.length <= 1) {
+    return "잔여 리스크 확인: 생존 가설을 반증할 핵심 지표와 독립 출처를 추가 확인한다.";
+  }
+  return `생존 가설(${survivors.join(", ")})을 가르기 위해 각 가설의 반증 지표, 독립 출처, 시간대별 변화 추세를 추가 확인한다.`;
 }
 
 function round(value: number): number {

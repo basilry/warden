@@ -1,0 +1,50 @@
+{
+  "evalSetId": "p28-supply-chain-golden-v0",
+  "version": "2026-06-18",
+  "description": "Small deterministic supply-chain fixture set for ontology expansion checks. This is not the full 20-case suite.",
+  "cases": [
+    {
+      "caseId": "supply-korea-semi-001",
+      "domain": "supply_chain",
+      "question": "Korea semiconductor supply chain exposure to export controls and Taiwan disruption",
+      "golden": {
+        "actors": ["korea_motie", "samsung_electronics", "sk_hynix", "tsmc", "us_bis"],
+        "regions": ["south_korea", "taiwan", "northeast_asia"],
+        "sectors": ["semiconductors"],
+        "signals": ["semiconductor_fab_output_guidance", "export_license_rule_change", "supplier_substitution"],
+        "risks": ["korea_supply_chain_disruption", "semiconductor_supply_shock", "export_controls"],
+        "sourceHints": ["korea_motie_briefings", "company_filings_guidance", "customs_trade_data", "export_control_registers"],
+        "scenarios": ["scenario_korea_supply_chain_stress", "scenario_sanctions_export_controls_cascade"]
+      }
+    },
+    {
+      "caseId": "supply-critical-minerals-002",
+      "domain": "supply_chain",
+      "question": "Critical minerals and battery inventory drawdown in the Korean supply chain",
+      "golden": {
+        "actors": ["korea_motie", "prc_government"],
+        "regions": ["south_korea", "china", "northeast_asia"],
+        "sectors": ["critical_minerals", "batteries"],
+        "signals": ["critical_mineral_inventory_drawdown", "customs_hs_code_shift", "supplier_substitution"],
+        "risks": ["single_point_dependency", "inventory_depletion", "korea_supply_chain_disruption"],
+        "sourceHints": ["korea_motie_briefings", "customs_trade_data", "industry_association_reports"],
+        "scenarios": ["scenario_korea_supply_chain_stress"]
+      }
+    },
+    {
+      "caseId": "supply-shipping-semiconductor-003",
+      "domain": "supply_chain",
+      "question": "Shipping lane disruption impact on semiconductor lead times",
+      "golden": {
+        "actors": ["shipping_insurers", "port_authorities", "tsmc"],
+        "regions": ["global_maritime", "taiwan_strait"],
+        "sectors": ["maritime_logistics", "semiconductors"],
+        "signals": ["port_congestion_rerouting", "shipping_insurance_premium", "semiconductor_fab_output_guidance"],
+        "risks": ["maritime_chokepoint_disruption", "semiconductor_supply_shock"],
+        "sourceHints": ["ais_maritime_tracks", "port_authority_notices", "shipping_insurance_market", "company_filings_guidance"],
+        "scenarios": ["scenario_maritime_chokepoint_disruption"]
+      }
+    }
+  ]
+}
+

@@ -45,9 +45,9 @@ export function createCodexCliModelAdapter(config: CodexCliAdapterConfig = {}): 
           model: payload.model,
           output: payload as T,
           warnings: [
-            "dry-run only: codex exec was not launched",
-            "Codex OAuth/API-key credentials are handled by the Codex CLI; WARDEN only forwards process.env",
-            "live Codex output is treated as a proposal, never as execution authority"
+            "dry-run 모드라 codex exec를 실행하지 않았습니다",
+            "Codex OAuth/API 키 자격증명은 Codex CLI가 관리하며 WARDEN은 process.env만 전달합니다",
+            "Codex 실시간 출력은 실행 권한이 아니라 제안으로만 취급됩니다"
           ]
         };
       }
@@ -58,8 +58,8 @@ export function createCodexCliModelAdapter(config: CodexCliAdapterConfig = {}): 
         model: payload.model,
         output: parseCodexOutput<T>(result.stdout, request.responseFormat),
         warnings: [
-          "live Codex output is treated as a proposal, never as execution authority",
-          ...(result.stderr.trim() ? [`codex stderr: ${result.stderr.trim().slice(0, 500)}`] : [])
+          "Codex 실시간 출력은 실행 권한이 아니라 제안으로만 취급됩니다",
+          ...(result.stderr.trim() ? [`Codex CLI 진단 로그가 기록되었습니다 (${summarizeStderr(result.stderr)}).`] : [])
         ]
       };
     }
@@ -138,6 +138,15 @@ async function runCodexExec(
 
     child.stdin.end(prompt);
   });
+}
+
+function summarizeStderr(stderr: string): string {
+  const compact = stderr.replace(/\s+/g, " ").trim();
+  const model = /model:\s*([^\s]+)/i.exec(compact)?.[1];
+  const provider = /provider:\s*([^\s]+)/i.exec(compact)?.[1];
+  if (model && provider) return `모델=${model}, 제공자=${provider}`;
+  if (model) return `모델=${model}`;
+  return compact.length > 80 ? `${compact.slice(0, 77)}...` : compact;
 }
 
 function parseCodexOutput<T>(stdout: string, responseFormat: ModelRequest["responseFormat"]): T {

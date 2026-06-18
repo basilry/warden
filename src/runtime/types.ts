@@ -5,7 +5,14 @@ import type { SourceReview } from "../agent/sourcevet-types.ts";
 import type { AchAnalysisResult, CaseFrame, EvidenceBundle, KnowledgeUnit } from "../agent/types.ts";
 import type { OsintStoredArtifact } from "../connectors/osint/types.ts";
 import type { OsintProviderTelemetry, OsintProviderWarning } from "../connectors/osint/search-types.ts";
+import type { LocalRagRetrievalResult } from "../connectors/rag/types.ts";
+import type { ClaimGraph } from "../agent/claim-graph/index.ts";
+import type { EvidenceLedger } from "../agent/evidence-ledger.ts";
+import type { DomainQueryExpansion } from "../domain/index.ts";
 import type { RuntimeAnswer, RuntimeAnswerMode } from "./answer.ts";
+import type { RuntimeForecastProducts } from "./analysis-products.ts";
+import type { InvestigationPlan } from "./investigation-plan-schema.ts";
+import type { SecurityReport } from "./report-schema.ts";
 
 export type RuntimeDomainGrounding = {
   domain: string;
@@ -56,7 +63,10 @@ export type RuntimeEventType =
   | "loop.iteration"
   | "model.requested"
   | "model.proposal"
+  | "investigation.plan"
+  | "domain.expansion"
   | "domain.grounding"
+  | "rag.retrieval"
   | "mcp.tool_start"
   | "mcp.tool_call"
   | "approval.pending"
@@ -105,8 +115,15 @@ export type RuntimeRun = {
     survivors?: string[];
     traceEvents?: number;
     answer?: RuntimeAnswer;
+    securityReport?: SecurityReport;
     domainGrounding?: RuntimeDomainGrounding;
+    domainExpansion?: DomainQueryExpansion;
+    ragContext?: LocalRagRetrievalResult;
+    claimGraph?: ClaimGraph;
+    evidenceLedger?: EvidenceLedger;
+    forecast?: RuntimeForecastProducts;
     fetchedEvidence?: KnowledgeUnit[];
+    investigationPlan?: InvestigationPlan;
     caseFrame?: CaseFrame;
     knowledgeUnits?: KnowledgeUnit[];
     evidenceBundles?: EvidenceBundle[];

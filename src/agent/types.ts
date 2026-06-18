@@ -172,15 +172,25 @@ export type RunOptions = {
   artifactDir?: string;
   extraKnowledgeUnits?: KnowledgeUnit[];
   extraEvidenceBundles?: EvidenceBundle[];
+  investigationPlan?: unknown;
 };
 
 export type Verdict = "C" | "I" | "N";
+
+export type AnalysisDomain =
+  | "defense_supply_chain"
+  | "security"
+  | "geopolitics"
+  | "supply_chain"
+  | "defense"
+  | "economic_security"
+  | "mixed";
 
 export type CaseFrame = {
   question: string;
   hypotheses: string[];
   nullHypothesis: string;
-  domain: "defense_supply_chain";
+  domain: AnalysisDomain;
 };
 
 export type Claim = {
@@ -206,6 +216,7 @@ export type KnowledgeUnit = {
   provenance: Provenance;
   reliability?: string;
   tags: string[];
+  metadata?: Record<string, string | number | boolean | string[]>;
 };
 
 export type EvidenceBundle = {
@@ -308,6 +319,7 @@ export type TeamRunResult = {
   trace: TraceEvent[];
   traceSummary: TraceSummary;
   outputs: {
+    investigationPlan?: unknown;
     caseFrame?: CaseFrame;
     knowledgeUnits?: KnowledgeUnit[];
     evidenceBundles?: EvidenceBundle[];

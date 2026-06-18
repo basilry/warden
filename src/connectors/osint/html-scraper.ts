@@ -371,7 +371,16 @@ function buildKnowledgeUnit(document: HtmlScrapeDocument, request: HtmlScrapeReq
       "html-scrape",
       "sourcevet-required",
       `approval:${request.approvalId}`
-    ])
+    ]),
+    metadata: {
+      title: document.title,
+      canonicalUrl: document.canonicalUrl,
+      summary: document.textExcerpt,
+      publishedAt: document.capturedAt,
+      publisher: domainFromUrl(document.canonicalUrl),
+      requestedUrl: document.requestedUrl,
+      truncated: document.truncated
+    }
   };
 }
 
@@ -412,6 +421,14 @@ function blocked(blockedReason: HtmlScrapeBlockedReason, warning: string): HtmlS
 
 function uniqueNonEmpty(values: Array<string | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function domainFromUrl(value: string): string {
+  try {
+    return new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return value;
+  }
 }
 
 function getGlobalFetch(): OsintFetchLike | undefined {

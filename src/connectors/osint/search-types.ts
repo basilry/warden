@@ -1,5 +1,6 @@
 import type { KnowledgeUnit } from "../../agent/types.ts";
 import type { OsintFetchLike } from "./http-client.ts";
+import type { OsintProviderQualityTracker } from "./provider-quality.ts";
 import type { OsintStoredArtifact } from "./types.ts";
 
 export type OsintSearchSourceKind = "gdelt-doc" | "brave-web" | "rss";
@@ -18,6 +19,7 @@ export type OsintSearchSource = {
   querySuffix?: string;
   defaultFreshness?: "pd" | "pw" | "pm" | "py";
   reliability?: string;
+  rateLimitKey?: string;
   cooldownMs?: number;
   backoffMultiplier?: number;
 };
@@ -68,6 +70,7 @@ export type OsintSearchRequest = {
   sourceIds?: string[];
   preferredDomains?: string[];
   maxResults: number;
+  maxSources?: number;
   timeoutMs: number;
   userAgent: string;
 };
@@ -75,6 +78,7 @@ export type OsintSearchRequest = {
 export type OsintSearchOptions = {
   fetchImpl?: OsintFetchLike;
   now?: string;
+  providerQuality?: OsintProviderQualityTracker;
 };
 
 export type OsintSearchResult = {

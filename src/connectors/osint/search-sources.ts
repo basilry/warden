@@ -66,6 +66,8 @@ function parseSearchSource(value: unknown, origin: string): OsintSearchSource {
     defaultFreshness:
       value.defaultFreshness === undefined ? undefined : parseFreshness(value.defaultFreshness, `${origin}.defaultFreshness`),
     reliability: value.reliability === undefined ? undefined : parseReliability(value.reliability, `${origin}.reliability`),
+    rateLimitKey:
+      value.rateLimitKey === undefined ? undefined : parseNonEmptyString(value.rateLimitKey, `${origin}.rateLimitKey`),
     cooldownMs: value.cooldownMs === undefined ? undefined : parseNonNegativeInteger(value.cooldownMs, `${origin}.cooldownMs`),
     backoffMultiplier:
       value.backoffMultiplier === undefined

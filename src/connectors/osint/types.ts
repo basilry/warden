@@ -25,6 +25,8 @@ export type OsintConnectorConfig = {
   searchSourcesPath: string;
   timeoutMs: number;
   maxResults: number;
+  maxQueries: number;
+  maxSourcesPerQuery: number;
   userAgent: string;
 };
 

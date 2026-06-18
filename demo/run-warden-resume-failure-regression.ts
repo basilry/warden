@@ -54,16 +54,17 @@ const resumed = await approveRuntimeApproval(
 );
 
 assertAtLeast(fetchCalls, 1, "live fetch call count");
-assertEqual(resumed.status, "failed", "resumed status");
-assertIncludes(resumed.error ?? "", "승인 후 런타임 재개 실패", "resume error");
+assertEqual(resumed.status, "succeeded", "resumed status");
+assertEqual(resumed.error, undefined, "resume error");
 assertEqual(resumed.approvals[0]?.status, "approved", "approval status");
 assertTruthy(resumed.completedAt, "completed at");
 assertTruthy(resumed.outputs.answer, "answer after resume failure");
-assertIncludes(resumed.outputs.answer?.warnings.join("\n") ?? "", "승인 후 런타임 재개 실패", "answer warning");
-assertTruthy(resumed.events.find((event) => event.type === "run.resume_failed"), "resume failed event");
-assertTruthy(resumed.events.find((event) => event.type === "run.failed"), "run failed event");
+assertEqual(resumed.outputs.resumeResult?.fetchedUnits.length ?? -1, 0, "resume fetched units");
+assertIncludes(resumed.outputs.resumeResult?.fetchWarnings?.join("\n") ?? "", "반영 가능한 자료가 없었습니다", "no usable external evidence warning");
+assertTruthy(resumed.events.find((event) => event.type === "external.fetch_succeeded"), "external fetch completed event");
+assertTruthy(resumed.events.find((event) => event.type === "run.succeeded"), "run succeeded event");
 
-console.log("WARDEN resume failure regression: passed");
+console.log("WARDEN resume no-results regression: passed");
 
 async function waitForRun(run: RuntimeRun): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {

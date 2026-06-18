@@ -1,4 +1,5 @@
 import { createApprovalQueue } from "../src/agent/approval.ts";
+import { loadWardenConfig } from "../src/agent/config.ts";
 import { createMockModelAdapter } from "../src/agent/models/mock-model.ts";
 import type { RuntimeRun } from "../src/runtime/types.ts";
 import { approvePendingApproval, rejectPendingApproval } from "../src/runtime/approval-actions.ts";
@@ -80,6 +81,7 @@ assertEqual(rejected.run.status, "failed", "rejected run status");
 assertIncludes(rejected.run.error ?? "", "Approval denied", "rejected run error");
 
 const state = createRuntimeState();
+const deterministicConfig = loadWardenConfig({ WARDEN_MODEL_PROVIDER: "mock", WARDEN_OSINT_LIVE_OPT_IN: "false" });
 const runtimeRun = startRuntimeRun(
   state,
   {
@@ -87,7 +89,10 @@ const runtimeRun = startRuntimeRun(
     maxIterations: 2,
     answerMode: "deterministic"
   },
-  { model: createMockModelAdapter() }
+  {
+    model: createMockModelAdapter(),
+    config: deterministicConfig
+  }
 );
 await waitForRun(runtimeRun);
 assertEqual(runtimeRun.status, "waiting_approval", "runtime approval wait status");
@@ -99,11 +104,11 @@ const resumed = await approveRuntimeRunApproval(state, runtimeRun.id, {
   actor: "operator",
   reason: "P9 regression runtime approval.",
   toolName: undefined
-});
+}, { config: deterministicConfig });
 assertEqual(resumed.status, "succeeded", "resumed runtime status");
 assertAtLeast(resumed.outputs.fetchedEvidence?.length ?? 0, 1, "resumed fetched evidence count");
 assertEqual(resumed.outputs.answer?.blockedActions.length ?? -1, 0, "resumed blocked action count");
-assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "approvedExternalEvidence", "resumed authority refs");
+assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "승인외부근거", "resumed authority refs");
 
 console.log("WARDEN approval resume regression: passed");
 

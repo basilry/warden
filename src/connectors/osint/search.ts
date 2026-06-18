@@ -1,4 +1,5 @@
 import { hashPayload } from "../../agent/ids.ts";
+import type { KnowledgeUnit } from "../../agent/types.ts";
 import { redactOsintPayload, normalizeOsintResponseToKnowledgeUnits } from "./normalizer.ts";
 import type { OsintFetchLike, OsintHttpResponse } from "./http-client.ts";
 import { parseRssItems } from "./rss.ts";
@@ -9,7 +10,8 @@ import {
 import {
   createOsintProviderQualityTracker,
   defaultReliabilityForSource,
-  OsintProviderFetchError
+  OsintProviderFetchError,
+  type OsintProviderQualityTracker
 } from "./provider-quality.ts";
 import type {
   OsintSearchOptions,
@@ -25,6 +27,7 @@ type SearchDocument = {
   url: string;
   summary?: string;
   publishedAt?: string;
+  publisher?: string;
   reliability?: string;
   tags?: string[];
 };
@@ -40,7 +43,7 @@ export async function runNaturalLanguageOsintSearch(
   options: OsintSearchOptions = {}
 ): Promise<OsintSearchResult> {
   const query = normalizeQuery(request.query);
-  const sources = selectSearchSources(registry, { sourceIds: request.sourceIds });
+  const sources = selectSearchSourcesForQuery(selectSearchSources(registry, { sourceIds: request.sourceIds }), query, request);
   if (sources.length === 0) {
     return blocked("source_not_allowed", "No enabled OSINT search source matched the request.");
   }
@@ -51,10 +54,11 @@ export async function runNaturalLanguageOsintSearch(
     return blocked("config_invalid", "No fetch implementation is available for OSINT search.");
   }
 
-  const units = [];
+  const units: KnowledgeUnit[] = [];
   const artifacts: OsintStoredArtifact[] = [];
   const warnings: string[] = [];
-  const providerQuality = createOsintProviderQualityTracker();
+  const providerQuality = options.providerQuality ?? createOsintProviderQualityTracker();
+  const explicitSources = Boolean(request.sourceIds?.length);
 
   for (const source of sources) {
     const cooldownWarning = providerQuality.activeCooldown(source);
@@ -102,7 +106,9 @@ export async function runNaturalLanguageOsintSearch(
       warnings.push(`${source.id}: ${(error as Error).message}`);
     }
 
-    if (units.length >= request.maxResults) break;
+    if (!explicitSources && units.length >= request.maxResults) {
+      break;
+    }
   }
 
   if (units.length === 0) {
@@ -119,7 +125,7 @@ export async function runNaturalLanguageOsintSearch(
 
   return {
     status: "succeeded",
-    units: units.slice(0, request.maxResults),
+    units: selectDiverseUnits(units, request.maxResults),
     artifacts,
     warnings,
     providerWarnings: providerQuality.warnings(),
@@ -166,6 +172,7 @@ async function fetchGdeltDocuments(
     url: readString(article, "url") ?? endpoint.toString(),
     summary: readString(article, "title") ?? readString(article, "description") ?? "GDELT article search result.",
     publishedAt: parseGdeltSeenDate(readString(article, "seendate")) ?? capturedAt,
+    publisher: readString(article, "domain") ?? source.name,
     reliability: readString(article, "reliability") ?? defaultReliability,
     tags: uniqueNonEmpty([
       "gdelt-doc",
@@ -203,6 +210,7 @@ async function fetchBraveDocuments(
     url: readString(article, "url") ?? endpoint.toString(),
     summary: readString(article, "description") ?? readString(article, "title") ?? "Brave web search result.",
     publishedAt: capturedAt,
+    publisher: source.name,
     reliability: defaultReliability,
     tags: ["brave-web"]
   }));
@@ -227,6 +235,7 @@ async function fetchRssDocuments(
       url: item.link || endpoint.toString(),
       summary: item.description,
       publishedAt: parseDate(item.pubDate) ?? capturedAt,
+      publisher: source.name,
       reliability: defaultReliability,
       tags: ["rss"]
     }));
@@ -395,6 +404,93 @@ function domainTags(domains: string[] | undefined): string[] {
 
 function uniqueNonEmpty(values: Array<string | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function selectSearchSourcesForQuery(
+  sources: OsintSearchSource[],
+  query: string,
+  request: Pick<OsintSearchRequest, "sourceIds" | "maxResults" | "maxSources">
+): OsintSearchSource[] {
+  if (request.sourceIds?.length) return sources;
+  const budget = Math.max(1, Math.min(sources.length, request.maxSources ?? Math.max(8, request.maxResults + 2)));
+  const official = sources.filter((source) => hasTag(source, "official"));
+  const global = sources.filter((source) => source.id.includes("global"));
+  const international = sources.filter((source) => hasTag(source, "international") && !official.includes(source) && !global.includes(source));
+  const korean = sources.filter((source) => hasTag(source, "korea") && !official.includes(source) && !global.includes(source));
+  const japan = sources.filter((source) => hasTag(source, "japan") && !official.includes(source) && !global.includes(source));
+  const other = sources.filter(
+    (source) =>
+      !official.includes(source) &&
+      !global.includes(source) &&
+      !international.includes(source) &&
+      !korean.includes(source) &&
+      !japan.includes(source)
+  );
+  const priority = isClaimVerificationQuery(query)
+    ? [
+        ...official.slice(0, 2),
+        ...interleaveSources(global, international, korean, japan, official.slice(2), other)
+      ].filter((source): source is OsintSearchSource => Boolean(source))
+    : hasHangul(query)
+      ? interleaveSources(official, global, korean, international, japan, other)
+      : interleaveSources(official, global, international, korean, japan, other);
+  return priority.slice(0, budget);
+}
+
+function interleaveSources(...groups: OsintSearchSource[][]): OsintSearchSource[] {
+  const result: OsintSearchSource[] = [];
+  const maxLength = Math.max(0, ...groups.map((group) => group.length));
+  for (let index = 0; index < maxLength; index += 1) {
+    for (const group of groups) {
+      const source = group[index];
+      if (source) result.push(source);
+    }
+  }
+  return result;
+}
+
+function hasTag(source: OsintSearchSource, tag: string): boolean {
+  return source.tags?.includes(tag) ?? false;
+}
+
+function hasHangul(value: string): boolean {
+  return /[가-힣]/.test(value);
+}
+
+function isClaimVerificationQuery(value: string): boolean {
+  return /검증|실제\s*여부|사실\s*여부|fact\s*check|debunk|hoax|conspiracy|음모|허위|가짜/i.test(value);
+}
+
+function selectDiverseUnits(units: KnowledgeUnit[], maxResults: number): KnowledgeUnit[] {
+  const buckets = new Map<string, KnowledgeUnit[]>();
+  for (const unit of units) {
+    const key = sourceBucketKey(unit);
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(unit);
+    buckets.set(key, bucket);
+  }
+
+  const selected: KnowledgeUnit[] = [];
+  while (selected.length < maxResults && buckets.size > 0) {
+    for (const key of [...buckets.keys()]) {
+      const bucket = buckets.get(key);
+      const next = bucket?.shift();
+      if (next) selected.push(next);
+      if (!bucket || bucket.length === 0) buckets.delete(key);
+      if (selected.length >= maxResults) break;
+    }
+  }
+  return selected;
+}
+
+function sourceBucketKey(unit: KnowledgeUnit): string {
+  const sourceTag = unit.tags.find((tag) => tag.startsWith("source:"));
+  if (sourceTag) return sourceTag;
+  try {
+    return new URL(unit.sourceUri).hostname;
+  } catch {
+    return unit.sourceType;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

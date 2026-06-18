@@ -87,11 +87,12 @@ const resumed = await resumeApprovedExternalFetchRun(makeRun(), makeApproval(), 
 
 assertEqual(mcpCalls, 1, "mcp invoker call count");
 assertEqual(fetchCalls, 0, "direct fetch call count");
-assertEqual(observedQuery, objective, "mcp query");
+assertIncludes(observedQuery, objective, "mcp query includes objective");
+assertIncludes(observedQuery, "supply chain risk policy response", "mcp query includes expanded search plan");
 assertEqual(resumed.status, "succeeded", "resumed status");
 assertEqual(resumed.outputs.resumeResult?.fetchMode, "live-osint", "resume fetch mode");
 assertIncludes(resumed.outputs.resumeResult?.fetchedUnits[0]?.tags.join(",") ?? "", "mcp-boundary", "mcp unit tag");
-assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "resumeFetchMode=live-osint", "resume authority ref");
+assertIncludes(resumed.outputs.answer?.authorityRefs.join(",") ?? "", "재개수집모드=실시간 OSINT", "resume authority ref");
 assertIncludes(resumed.outputs.resumeResult?.fetchWarnings?.join("\n") ?? "", "mock MCP", "mcp warning");
 
 console.log("WARDEN OSINT MCP boundary regression: passed");

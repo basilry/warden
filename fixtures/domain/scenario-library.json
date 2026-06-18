@@ -1,0 +1,187 @@
+{
+  "libraryId": "warden-domain-scenario-library-v1",
+  "version": "2026-06-18",
+  "title": "WARDEN Domain Scenario Library",
+  "description": "Offline scenario templates used to expand domain questions into likely actors, signals, source hints, and competing hypotheses.",
+  "templates": [
+    {
+      "id": "scenario_taiwan_strait_blockade",
+      "title": "Taiwan Strait blockade or quarantine pressure",
+      "summary": "Cross-strait coercion scenario where military exercises, navigation restrictions, inspections, and market signals point to a blockade or quarantine track rather than routine signaling alone.",
+      "domainTags": ["geopolitics", "security_forecast", "supply_chain", "semiconductors"],
+      "triggerTerms": [
+        "Taiwan Strait blockade",
+        "Taiwan blockade",
+        "blockade",
+        "quarantine",
+        "Taiwan semiconductor blockade",
+        "Taiwan invasion risk",
+        "China Taiwan invasion",
+        "cross-strait crisis",
+        "대만 봉쇄",
+        "대만 침공",
+        "중국의 대만 침공",
+        "타이완 침공",
+        "대만 위기",
+        "양안 위기"
+      ],
+      "actorIds": ["prc_government", "pla_eastern_theater_command", "taiwan_mnd", "taiwan_coast_guard", "tsmc", "shipping_insurers", "port_authorities"],
+      "regionIds": ["taiwan", "taiwan_strait", "china", "global_maritime"],
+      "sectorIds": ["defense", "maritime_logistics", "semiconductors"],
+      "signalIds": ["adiz_sorties", "amphibious_mobilization", "maritime_exclusion_zone", "missile_exercise_notice", "vessel_inspection_boarding", "port_congestion_rerouting", "shipping_insurance_premium", "semiconductor_fab_output_guidance"],
+      "riskIds": ["taiwan_strait_blockade", "military_escalation", "maritime_chokepoint_disruption", "semiconductor_supply_shock"],
+      "sourceHintIds": ["taiwan_mnd_daily_activity", "prc_mnd_statements", "ais_maritime_tracks", "port_authority_notices", "shipping_insurance_market", "company_filings_guidance", "satellite_imagery_tasking"],
+      "hypotheses": [
+        {
+          "id": "h_blockade_preparation",
+          "title": "Blockade preparation is increasing",
+          "statement": "Observed activity is consistent with preparations for a coercive maritime or air-access blockade around Taiwan.",
+          "indicatorSignalIds": ["maritime_exclusion_zone", "vessel_inspection_boarding", "port_congestion_rerouting", "shipping_insurance_premium"],
+          "disconfirmingSignalIds": ["supplier_substitution"]
+        },
+        {
+          "id": "h_exercise_signaling",
+          "title": "Activity remains coercive exercise signaling",
+          "statement": "Observed activity is best explained by crisis signaling or exercises that stop short of sustained access denial.",
+          "indicatorSignalIds": ["adiz_sorties", "missile_exercise_notice", "diplomatic_crisis_signaling"],
+          "disconfirmingSignalIds": ["vessel_inspection_boarding", "shipping_insurance_premium"]
+        },
+        {
+          "id": "h_supply_chain_transmission",
+          "title": "Semiconductor supply effects are the primary transmission path",
+          "statement": "The most decision-relevant effect is semiconductor and maritime-logistics disruption even if military escalation remains limited.",
+          "indicatorSignalIds": ["semiconductor_fab_output_guidance", "port_congestion_rerouting", "shipping_insurance_premium"],
+          "disconfirmingSignalIds": ["supplier_substitution"]
+        }
+      ],
+      "analystPrompts": [
+        "Separate declared exercise zones from observed vessel rerouting.",
+        "Check whether semiconductor guidance changes are attributed to demand, logistics, or political risk.",
+        "Require at least one official source and one independent maritime or market source before escalating."
+      ]
+    },
+    {
+      "id": "scenario_korea_supply_chain_stress",
+      "title": "Korea semiconductor and battery supply-chain stress",
+      "summary": "Korea-focused industrial scenario where export controls, critical-mineral drawdowns, supplier substitution, and corporate guidance indicate stress across semiconductor and battery inputs.",
+      "domainTags": ["supply_chain", "economic_security", "semiconductors", "batteries"],
+      "triggerTerms": ["Korea supply chain", "Korean semiconductor supply", "Korea battery minerals", "critical mineral inventory", "한국 공급망", "반도체 공급망"],
+      "actorIds": ["korea_motie", "samsung_electronics", "sk_hynix", "japan_meti", "prc_government", "us_bis"],
+      "regionIds": ["south_korea", "northeast_asia", "china", "japan", "taiwan", "united_states"],
+      "sectorIds": ["semiconductors", "batteries", "critical_minerals", "maritime_logistics"],
+      "signalIds": ["critical_mineral_inventory_drawdown", "supplier_substitution", "customs_hs_code_shift", "semiconductor_fab_output_guidance", "export_license_rule_change"],
+      "riskIds": ["korea_supply_chain_disruption", "single_point_dependency", "inventory_depletion", "export_controls", "semiconductor_supply_shock"],
+      "sourceHintIds": ["korea_motie_briefings", "company_filings_guidance", "customs_trade_data", "industry_association_reports", "export_control_registers"],
+      "hypotheses": [
+        {
+          "id": "h_upstream_material_shortage",
+          "title": "Upstream material shortage is binding",
+          "statement": "Stress is driven primarily by critical-mineral or specialty-material availability rather than downstream demand.",
+          "indicatorSignalIds": ["critical_mineral_inventory_drawdown", "customs_hs_code_shift"],
+          "disconfirmingSignalIds": ["semiconductor_fab_output_guidance"]
+        },
+        {
+          "id": "h_control_regime_shift",
+          "title": "Control-regime change is binding",
+          "statement": "Export-control or licensing changes are the key driver of Korean supply-chain disruption.",
+          "indicatorSignalIds": ["export_license_rule_change", "entity_list_update"],
+          "disconfirmingSignalIds": ["supplier_substitution"]
+        },
+        {
+          "id": "h_buffer_and_substitution",
+          "title": "Buffers and substitution are absorbing the shock",
+          "statement": "Supplier substitution, stockpiles, or demand softness are preventing a material disruption.",
+          "indicatorSignalIds": ["supplier_substitution"],
+          "disconfirmingSignalIds": ["critical_mineral_inventory_drawdown", "semiconductor_fab_output_guidance"]
+        }
+      ],
+      "analystPrompts": [
+        "Separate semiconductor, battery, and critical-mineral evidence instead of treating supply chain as one bucket.",
+        "Check stockpile language against customs volumes and company guidance.",
+        "Look for third-country routing and supplier-qualification evidence."
+      ]
+    },
+    {
+      "id": "scenario_sanctions_export_controls_cascade",
+      "title": "Sanctions and export-control cascade",
+      "summary": "Economic-security scenario where new designations, license rules, and trade-flow shifts create cascading procurement and compliance risk.",
+      "domainTags": ["economic_security", "export_controls", "sanctions", "supply_chain"],
+      "triggerTerms": ["export controls", "sanctions", "entity list", "technology controls", "제재", "수출통제"],
+      "actorIds": ["us_bis", "prc_government", "japan_meti", "korea_motie", "samsung_electronics", "sk_hynix"],
+      "regionIds": ["united_states", "china", "japan", "south_korea", "northeast_asia"],
+      "sectorIds": ["semiconductors", "critical_minerals", "defense"],
+      "signalIds": ["export_license_rule_change", "entity_list_update", "customs_hs_code_shift", "supplier_substitution"],
+      "riskIds": ["export_controls", "sanctions_evasion", "semiconductor_supply_shock", "korea_supply_chain_disruption", "single_point_dependency"],
+      "sourceHintIds": ["export_control_registers", "sanctions_lists", "customs_trade_data", "company_filings_guidance", "korea_motie_briefings"],
+      "hypotheses": [
+        {
+          "id": "h_rule_change_direct_impact",
+          "title": "Rule changes directly constrain supply",
+          "statement": "New or clarified controls directly restrict goods, tools, software, or end users needed by affected firms.",
+          "indicatorSignalIds": ["export_license_rule_change", "entity_list_update"],
+          "disconfirmingSignalIds": ["supplier_substitution"]
+        },
+        {
+          "id": "h_evasion_and_rerouting",
+          "title": "Evasion and rerouting are rising",
+          "statement": "Trade-flow and corporate-pattern changes indicate attempts to route around sanctions or controls.",
+          "indicatorSignalIds": ["customs_hs_code_shift", "supplier_substitution"],
+          "disconfirmingSignalIds": ["export_license_rule_change"]
+        },
+        {
+          "id": "h_compliance_noise",
+          "title": "Compliance noise exceeds material disruption",
+          "statement": "Observed changes reflect compliance adjustment and reporting noise rather than binding supply constraints.",
+          "indicatorSignalIds": ["supplier_substitution"],
+          "disconfirmingSignalIds": ["semiconductor_fab_output_guidance", "critical_mineral_inventory_drawdown"]
+        }
+      ],
+      "analystPrompts": [
+        "Anchor claims to exact rule text, designation date, controlled items, and named end users.",
+        "Compare policy signals against customs and corporate guidance.",
+        "Avoid inferring evasion from one trade-flow anomaly without corroboration."
+      ]
+    },
+    {
+      "id": "scenario_maritime_chokepoint_disruption",
+      "title": "Maritime chokepoint disruption",
+      "summary": "Logistics scenario where shipping-lane friction, insurance premiums, port notices, or vessel rerouting threatens energy, semiconductor, and industrial supply chains.",
+      "domainTags": ["supply_chain", "maritime", "logistics", "energy"],
+      "triggerTerms": ["maritime chokepoint", "shipping lane disruption", "shipping inspections", "port congestion", "war risk premium", "해상 초크포인트", "항만 혼잡"],
+      "actorIds": ["shipping_insurers", "port_authorities", "taiwan_coast_guard", "pla_eastern_theater_command"],
+      "regionIds": ["global_maritime", "taiwan_strait", "taiwan"],
+      "sectorIds": ["maritime_logistics", "energy", "semiconductors"],
+      "signalIds": ["port_congestion_rerouting", "shipping_insurance_premium", "maritime_exclusion_zone", "vessel_inspection_boarding"],
+      "riskIds": ["maritime_chokepoint_disruption", "taiwan_strait_blockade", "semiconductor_supply_shock", "inventory_depletion"],
+      "sourceHintIds": ["ais_maritime_tracks", "port_authority_notices", "shipping_insurance_market", "company_filings_guidance"],
+      "hypotheses": [
+        {
+          "id": "h_physical_chokepoint_constraint",
+          "title": "Physical chokepoint constraint is binding",
+          "statement": "Routing, port, or canal constraints are materially reducing throughput or increasing lead times.",
+          "indicatorSignalIds": ["port_congestion_rerouting", "maritime_exclusion_zone"],
+          "disconfirmingSignalIds": ["supplier_substitution"]
+        },
+        {
+          "id": "h_market_risk_pricing",
+          "title": "Market risk pricing is the leading signal",
+          "statement": "Insurance and freight pricing are reacting before confirmed physical disruption appears.",
+          "indicatorSignalIds": ["shipping_insurance_premium"],
+          "disconfirmingSignalIds": ["port_congestion_rerouting"]
+        },
+        {
+          "id": "h_localized_delay",
+          "title": "Delay is localized and absorbable",
+          "statement": "Observed disruption is local, temporary, and unlikely to transmit into broader supply-chain stress.",
+          "indicatorSignalIds": ["supplier_substitution"],
+          "disconfirmingSignalIds": ["shipping_insurance_premium", "port_congestion_rerouting"]
+        }
+      ],
+      "analystPrompts": [
+        "Compare AIS route changes against port and navigation notices.",
+        "Separate insurance premium movement from confirmed vessel delays.",
+        "Trace which sectors depend on the affected lane and whether inventory buffers exist."
+      ]
+    }
+  ]
+}

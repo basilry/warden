@@ -1,6 +1,7 @@
 import type { KnowledgeUnit } from "../../agent/types.ts";
 import { scrapeHtmlDocuments } from "./html-scraper.ts";
 import type { OsintFetchLike } from "./http-client.ts";
+import type { OsintProviderQualityTracker } from "./provider-quality.ts";
 import { runNaturalLanguageOsintSearch } from "./search.ts";
 import type {
   OsintProviderTelemetry,
@@ -18,6 +19,7 @@ export type OsintDiscoveryRequest = {
   sourceIds?: string[];
   preferredDomains?: string[];
   maxResults: number;
+  maxSources?: number;
   timeoutMs: number;
   userAgent: string;
   maxScrapeChars?: number;
@@ -38,6 +40,7 @@ export type OsintDiscoveryResult = {
 export type OsintDiscoveryOptions = {
   fetchImpl?: OsintFetchLike;
   now?: string;
+  providerQuality?: OsintProviderQualityTracker;
 };
 
 export async function runOsintDiscoveryPipeline(

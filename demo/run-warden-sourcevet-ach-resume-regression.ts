@@ -20,8 +20,8 @@ const run = startRuntimeRun(
 
 await waitForRun(run);
 assertEqual(run.status, "waiting_approval", "initial runtime status");
-assertTruthy(run.outputs.ach, "initial ach output");
-assertAtLeast(run.outputs.ach?.survivors.length ?? 0, 1, "initial ach survivors");
+assertTruthy(run.outputs.investigationPlan, "initial investigation plan");
+assertEqual(run.outputs.ach, undefined, "initial ach is deferred until approval");
 
 const approvalId = run.approvals.find((approval) => approval.status === "pending")?.id;
 assertTruthy(approvalId, "pending approval id");
@@ -35,7 +35,7 @@ const resumed = await approveRuntimeApproval(state, run.id, {
 assertEqual(resumed.status, "succeeded", "resumed status");
 assertTruthy(resumed.outputs.resumeResult, "resume result");
 assertTruthy(resumed.outputs.resumeResult?.sourceReview, "resume source review");
-assertTruthy(resumed.outputs.resumeResult?.achBefore, "resume ach before");
+assertEqual(resumed.outputs.resumeResult?.achBefore, undefined, "resume ach before is empty for preflight approval");
 assertTruthy(resumed.outputs.resumeResult?.achAfter, "resume ach after");
 assertAtLeast(resumed.outputs.resumeResult?.fetchedUnits.length ?? 0, 1, "resume fetched units");
 assertAtLeast(resumed.outputs.resumeResult?.promotedBundles.length ?? 0, 1, "resume promoted bundles");
@@ -48,7 +48,7 @@ assertIncludes(
 assertEqual(resumed.outputs.answer?.blockedActions.length ?? -1, 0, "resumed blocked actions");
 assertIncludes(
   resumed.outputs.answer?.authorityRefs.join(",") ?? "",
-  "resumePromotedEvidence",
+  "재개승격근거",
   "resume authority refs"
 );
 assertAtLeast(

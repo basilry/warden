@@ -1,0 +1,50 @@
+{
+  "evalSetId": "p28-geopolitics-golden-v0",
+  "version": "2026-06-18",
+  "description": "Small deterministic geopolitics fixture set for ontology expansion checks. This is not the full 20-case suite.",
+  "cases": [
+    {
+      "caseId": "geo-taiwan-exercise-001",
+      "domain": "geopolitics",
+      "question": "PLA exercises, ADIZ sorties, and live-fire notices around Taiwan",
+      "golden": {
+        "actors": ["pla_eastern_theater_command", "taiwan_mnd", "prc_government"],
+        "regions": ["taiwan", "taiwan_strait", "china"],
+        "sectors": ["defense", "maritime_logistics"],
+        "signals": ["adiz_sorties", "missile_exercise_notice", "maritime_exclusion_zone", "diplomatic_crisis_signaling"],
+        "risks": ["military_escalation", "taiwan_strait_blockade"],
+        "sourceHints": ["taiwan_mnd_daily_activity", "prc_mnd_statements", "port_authority_notices"],
+        "scenarios": ["scenario_taiwan_strait_blockade"]
+      }
+    },
+    {
+      "caseId": "geo-sanctions-rerouting-002",
+      "domain": "geopolitics",
+      "question": "Sanctions evasion through transshipment and HS code shifts",
+      "golden": {
+        "actors": ["us_bis", "prc_government"],
+        "regions": ["united_states", "china", "northeast_asia"],
+        "sectors": ["semiconductors", "defense", "critical_minerals"],
+        "signals": ["entity_list_update", "customs_hs_code_shift", "supplier_substitution"],
+        "risks": ["sanctions_evasion", "export_controls"],
+        "sourceHints": ["sanctions_lists", "customs_trade_data", "export_control_registers"],
+        "scenarios": ["scenario_sanctions_export_controls_cascade"]
+      }
+    },
+    {
+      "caseId": "geo-cross-strait-shipping-003",
+      "domain": "geopolitics",
+      "question": "Cross-strait shipping inspections and quarantine rhetoric",
+      "golden": {
+        "actors": ["taiwan_coast_guard", "pla_eastern_theater_command", "shipping_insurers"],
+        "regions": ["taiwan_strait", "taiwan"],
+        "sectors": ["maritime_logistics", "defense"],
+        "signals": ["vessel_inspection_boarding", "maritime_exclusion_zone", "shipping_insurance_premium"],
+        "risks": ["taiwan_strait_blockade", "maritime_chokepoint_disruption"],
+        "sourceHints": ["ais_maritime_tracks", "port_authority_notices", "shipping_insurance_market"],
+        "scenarios": ["scenario_taiwan_strait_blockade", "scenario_maritime_chokepoint_disruption"]
+      }
+    }
+  ]
+}
+

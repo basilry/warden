@@ -1,0 +1,138 @@
+{
+  "corpusId": "p21-local-domain-corpus-v1",
+  "version": "2026-06-18",
+  "title": "P21 Local RAG Domain Corpus",
+  "description": "Small deterministic local corpus for RAG and MCP regression tests. It is offline fixture knowledge, not live OSINT.",
+  "entries": [
+    {
+      "id": "taiwan-security-semiconductor-shock",
+      "title": "Taiwan security pressure and semiconductor disruption",
+      "uri": "fixture://p21-local-domain-corpus/taiwan-security-semiconductor-shock",
+      "reliability": "B2",
+      "tags": [
+        "domain:security",
+        "domain:defense_supply_chain",
+        "topic:security",
+        "topic:supply_chain",
+        "region:taiwan",
+        "region:northeast_asia",
+        "sector:semiconductor",
+        "sector:logistics",
+        "risk:geopolitical_disruption",
+        "risk:logistics_disruption"
+      ],
+      "claims": [
+        {
+          "id": "claim-p21-taiwan-001",
+          "text": "Taiwan security pressure can disrupt Northeast Asia semiconductor supply through foundry capacity, advanced packaging schedules, shipping lanes, and export-control coordination.",
+          "confidence": 0.74,
+          "evidenceRefs": ["local:p21-rag", "scenario:taiwan-security"]
+        },
+        {
+          "id": "claim-p21-taiwan-002",
+          "text": "A Taiwan contingency should be modeled as a combined security, logistics, insurance, and production-planning shock rather than as a single factory outage.",
+          "confidence": 0.72,
+          "evidenceRefs": ["local:p21-rag", "scenario:taiwan-security"]
+        }
+      ]
+    },
+    {
+      "id": "northeast-asia-supply-chain-map",
+      "title": "Northeast Asia supply-chain dependency map",
+      "uri": "fixture://p21-local-domain-corpus/northeast-asia-supply-chain-map",
+      "reliability": "B2",
+      "tags": [
+        "domain:defense_supply_chain",
+        "topic:supply_chain",
+        "topic:economic_security",
+        "region:northeast_asia",
+        "region:south_korea",
+        "region:japan",
+        "region:taiwan",
+        "region:china",
+        "sector:semiconductor",
+        "sector:battery",
+        "sector:industrial",
+        "risk:single_point_dependency"
+      ],
+      "claims": [
+        {
+          "id": "claim-p21-nea-001",
+          "text": "Northeast Asia supply-chain analysis should separate upstream materials, precision equipment, fabrication capacity, packaging, ports, and technology-control exposure.",
+          "confidence": 0.76,
+          "evidenceRefs": ["local:p21-rag", "profile:northeast-asia"]
+        },
+        {
+          "id": "claim-p21-nea-002",
+          "text": "South Korea, Japan, Taiwan, and China form overlapping industrial networks, so resilience work should compare alternate suppliers, buffer inventory, and route substitution.",
+          "confidence": 0.72,
+          "evidenceRefs": ["local:p21-rag", "profile:northeast-asia"]
+        }
+      ]
+    },
+    {
+      "id": "maritime-logistics-security",
+      "title": "Maritime logistics security chokepoints",
+      "uri": "fixture://p21-local-domain-corpus/maritime-logistics-security",
+      "reliability": "B3",
+      "tags": [
+        "domain:security",
+        "domain:defense_supply_chain",
+        "topic:security",
+        "topic:supply_chain",
+        "region:northeast_asia",
+        "region:taiwan",
+        "sector:logistics",
+        "risk:maritime_chokepoint",
+        "risk:insurance_friction",
+        "risk:logistics_disruption"
+      ],
+      "claims": [
+        {
+          "id": "claim-p21-maritime-001",
+          "text": "Security stress near Taiwan or adjacent sea lanes can raise insurance friction, reroute shipping, and delay high-value electronics components moving through Northeast Asia.",
+          "confidence": 0.69,
+          "evidenceRefs": ["local:p21-rag", "scenario:maritime-logistics"]
+        },
+        {
+          "id": "claim-p21-maritime-002",
+          "text": "Useful local indicators include port delays, shipping schedule changes, insurance cost shifts, and public statements about alternate logistics routes.",
+          "confidence": 0.66,
+          "evidenceRefs": ["local:p21-rag", "scenario:maritime-logistics"]
+        }
+      ]
+    },
+    {
+      "id": "critical-minerals-industrial-policy",
+      "title": "Critical minerals and industrial-policy exposure",
+      "uri": "fixture://p21-local-domain-corpus/critical-minerals-industrial-policy",
+      "reliability": "B3",
+      "tags": [
+        "domain:defense_supply_chain",
+        "topic:supply_chain",
+        "topic:economic_security",
+        "region:northeast_asia",
+        "region:south_korea",
+        "sector:battery",
+        "sector:critical_minerals",
+        "sector:industrial",
+        "risk:single_point_dependency",
+        "risk:policy_control"
+      ],
+      "claims": [
+        {
+          "id": "claim-p21-minerals-001",
+          "text": "Battery and critical-minerals exposure should be split into mining, refining, precursor materials, cell production, and policy controls on exports or subsidies.",
+          "confidence": 0.68,
+          "evidenceRefs": ["local:p21-rag", "profile:critical-minerals"]
+        },
+        {
+          "id": "claim-p21-minerals-002",
+          "text": "For Northeast Asia supply-chain questions, critical-minerals checks should cover supplier concentration, stockpiles, long-term offtake agreements, and substitute materials.",
+          "confidence": 0.66,
+          "evidenceRefs": ["local:p21-rag", "profile:critical-minerals"]
+        }
+      ]
+    }
+  ]
+}

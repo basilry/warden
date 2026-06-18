@@ -2,7 +2,7 @@ import { createApprovalQueue } from "../agent/approval.ts";
 import { createTraceRecorder } from "../agent/audit.ts";
 import { loadWardenConfig, type WardenConfig } from "../agent/config.ts";
 import { newId, nowIso } from "../agent/ids.ts";
-import { createModelRequest, type ModelAdapter } from "../agent/model-adapter.ts";
+import { createModelRequest, type ModelAdapter, type ModelResponse } from "../agent/model-adapter.ts";
 import { createModelAdapterFromConfig } from "../agent/models/provider.ts";
 import { createLocalCapabilityRegistry } from "../agent/mcp/local-registry.ts";
 import type { OsintSearchMcpInvoker } from "../agent/mcp/osint-client.ts";
@@ -21,10 +21,14 @@ import {
   composeModelAssistedAnswerFromResponse,
   createAnswerDraftRequest,
   type AnswerContext,
+  type RuntimeAnswer,
   type RuntimeAnswerMode
 } from "./answer.ts";
+import { buildRuntimeAnalysisProducts } from "./analysis-products.ts";
 import { EXTERNAL_OSINT_FETCH_TOOL } from "./external-fetch.ts";
-import { selectRuntimeToolPlan } from "./planner.ts";
+import { buildInvestigationPlan } from "./investigation-planner.ts";
+import { buildDeterministicRuntimeToolPlan, selectRuntimeToolPlan } from "./planner.ts";
+import { composeSecurityReport } from "./report-composer.ts";
 import { resumeApprovedExternalFetchRun } from "./resume.ts";
 import {
   appendRuntimeEvent,
@@ -110,7 +114,6 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
   const approvals = createApprovalQueue();
   const policy = createPolicyEngine();
   const trace = createTraceRecorder(run.id);
-  const router = createRuntimeRouter(run.objective, deps, { withSourceVet: run.withSourceVet });
   let latestTeamResult: TeamRunResult | undefined;
   let latestPlannerProposal = undefined as Awaited<ReturnType<ModelAdapter["generate"]>> | undefined;
 
@@ -120,6 +123,49 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
 
   try {
     attachDomainGrounding(run, deps);
+    const investigationModelResponse = await requestInvestigationPlanProposal(run, model, deps);
+    if (investigationModelResponse) {
+      run.modelResponses.push(investigationModelResponse);
+    }
+    const investigationPlan = buildInvestigationPlan(run.objective, investigationModelResponse, {
+      currentDate: new Date().toISOString().slice(0, 10),
+      language: "ko"
+    });
+    run.outputs.investigationPlan = investigationPlan;
+    emit(
+      run,
+      "investigation.plan",
+      "질문별 분석계획을 생성했습니다.",
+      {
+        source: investigationPlan.source,
+        warnings: investigationPlan.warnings,
+        domain: investigationPlan.domain,
+        scenario: investigationPlan.classification.scenario,
+        matchedSignals: investigationPlan.classification.matchedSignals,
+        hypothesisCount: investigationPlan.hypotheses.length,
+        searchPlanCount: investigationPlan.searchPlan.length
+      },
+      deps
+    );
+    attachRuntimeAnalysisProducts(run, undefined, deps);
+
+    const router = createRuntimeRouter(run.objective, deps, {
+      withSourceVet: run.withSourceVet,
+      investigationPlan
+    });
+    const preflightedExternalApproval = await preflightExternalOsintApproval(run, {
+      approvals,
+      deps,
+      policy,
+      router,
+      trace
+    });
+    if (preflightedExternalApproval) {
+      run.completedAt = nowIso();
+      touch(run);
+      emit(run, "approval.pending", `런타임 실행 상태: ${formatRunStatusKo(run.status)}.`, undefined, deps);
+      return;
+    }
 
     for (let index = 1; index <= run.maxIterations; index += 1) {
       run.iteration = index;
@@ -199,6 +245,7 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
         updateRuntimeAnswer(run, latestTeamResult);
         touch(run);
         emit(run, "approval.pending", `${plan.toolName} 승인 대기 중입니다.`, result.approvalRequest, deps);
+        break;
       }
 
       if (result.output && isTeamRunResult(result.output)) {
@@ -209,22 +256,20 @@ export async function executeRuntimeRun(run: RuntimeRun, deps: RuntimeDependenci
           survivors: result.output.outputs.ach?.survivors,
           traceEvents: result.output.trace.length,
           domainGrounding: run.outputs.domainGrounding,
+          domainExpansion: run.outputs.domainExpansion,
+          ragContext: run.outputs.ragContext,
+          claimGraph: run.outputs.claimGraph,
+          evidenceLedger: run.outputs.evidenceLedger,
+          forecast: run.outputs.forecast,
+          investigationPlan: run.outputs.investigationPlan,
           fetchedEvidence: run.outputs.fetchedEvidence,
           caseFrame: result.output.outputs.caseFrame,
           knowledgeUnits: result.output.outputs.knowledgeUnits,
           evidenceBundles: result.output.outputs.evidenceBundles,
           ach: result.output.outputs.ach,
-          sourceReview: result.output.outputs.sourceReview,
-          answer: composeDeterministicAnswer({
-            objective: run.objective,
-            runStatus: run.status,
-            teamResult: result.output,
-            approvals: run.approvals,
-            modelResponses: run.modelResponses,
-            domainGrounding: run.outputs.domainGrounding,
-            fetchedEvidence: run.outputs.fetchedEvidence
-          })
+          sourceReview: result.output.outputs.sourceReview
         };
+        refreshRuntimeDerivedOutputs(run, latestTeamResult);
       }
     }
 
@@ -279,14 +324,18 @@ export async function approveRuntimeApproval(
       });
       state.runs.set(nextRun.id, nextRun);
       saveRuntimeRun(runtimeDeps.repository, nextRun);
+      const fetchedCount = nextRun.outputs.resumeResult?.fetchedUnits.length ?? 0;
+      const promotedCount = nextRun.outputs.resumeResult?.promotedBundles.length ?? 0;
       emit(
         nextRun,
         "external.fetch_succeeded",
-        `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 SourceVet 검증과 ACH 재평가를 완료했습니다.`,
+        fetchedCount > 0
+          ? `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 SourceVet 검증과 ACH 재평가를 완료했습니다.`
+          : `${EXTERNAL_OSINT_FETCH_TOOL} 승인 후 외부 수집을 시도했지만 반영 가능한 자료가 없었습니다.`,
         {
           toolName: EXTERNAL_OSINT_FETCH_TOOL,
-          evidenceCount: nextRun.outputs.resumeResult?.fetchedUnits.length ?? 0,
-          promotedEvidenceCount: nextRun.outputs.resumeResult?.promotedBundles.length ?? 0,
+          evidenceCount: fetchedCount,
+          promotedEvidenceCount: promotedCount,
           survivorDelta: nextRun.outputs.resumeResult?.survivorDelta
         },
         runtimeDeps
@@ -338,7 +387,7 @@ export function rejectRuntimeApproval(
 export function createRuntimeRouter(
   objective: string,
   deps: RuntimeDependencies = {},
-  options: { withSourceVet?: boolean } = {}
+  options: { withSourceVet?: boolean; investigationPlan?: unknown } = {}
 ): CapabilityRouter {
   const local = createLocalCapabilityRegistry();
   local.registerCapability(
@@ -354,7 +403,8 @@ export function createRuntimeRouter(
         withSupervisor: false,
         withSourceVet: options.withSourceVet === true,
         withBriefing: false,
-        fixtureVariant: "normal"
+        fixtureVariant: "normal",
+        investigationPlan: options.investigationPlan
       })
   );
 
@@ -369,20 +419,107 @@ function shouldRequestModelProposal(iteration: number): boolean {
   return iteration === 1;
 }
 
+async function preflightExternalOsintApproval(
+  run: RuntimeRun,
+  context: {
+    approvals: ReturnType<typeof createApprovalQueue>;
+    deps: RuntimeDependencies;
+    policy: ReturnType<typeof createPolicyEngine>;
+    router: CapabilityRouter;
+    trace: ReturnType<typeof createTraceRecorder>;
+  }
+): Promise<boolean> {
+  if (!shouldPreflightExternalOsint(run)) return false;
+
+  const plan = buildDeterministicRuntimeToolPlan(run, 2);
+  emit(
+    run,
+    "mcp.tool_start",
+    `${plan.toolName}을 정책 검토와 MCP 라우터로 전달합니다.`,
+    {
+      toolName: plan.toolName,
+      capability: plan.capability,
+      risk: plan.risk,
+      plannerSource: "approval_preflight"
+    },
+    context.deps
+  );
+  const toolStartedAt = Date.now();
+  const result = await routeToolCallWithPolicy(plan, context.router, {
+    runId: run.id,
+    role: "supervisor",
+    policy: context.policy,
+    approvals: context.approvals,
+    trace: context.trace
+  });
+  const toolDurationMs = Date.now() - toolStartedAt;
+  run.toolResults.push(toToolRecord(0, plan.toolName, result, toolDurationMs));
+  emit(
+    run,
+    "mcp.tool_call",
+    `${plan.toolName}: ${formatToolStatusKo(result.status)}.`,
+    { decision: result.decision, error: result.error, durationMs: toolDurationMs, preflight: true },
+    context.deps
+  );
+
+  if (!result.approvalRequest) return false;
+
+  run.approvals = context.approvals.listAll();
+  run.status = "waiting_approval";
+  updateRuntimeAnswer(run, undefined);
+  touch(run);
+  emit(run, "approval.pending", `${plan.toolName} 승인 대기 중입니다.`, result.approvalRequest, context.deps);
+  return true;
+}
+
+function shouldPreflightExternalOsint(run: RuntimeRun): boolean {
+  if (run.maxIterations < 2) return false;
+  return !run.approvals.some((approval) => approval.action.name === EXTERNAL_OSINT_FETCH_TOOL && approval.status === "pending");
+}
+
+async function requestInvestigationPlanProposal(
+  run: RuntimeRun,
+  model: ModelAdapter,
+  deps: RuntimeDependencies
+): Promise<ModelResponse<unknown> | undefined> {
+  if (model.kind === "mock") return undefined;
+  const modelRequest = createModelRequest({
+    role: "planner",
+    prompt: buildInvestigationPlanPrompt(run),
+    context: summarizeRunForModel(run),
+    responseFormat: "json"
+  });
+  emit(
+    run,
+    "model.requested",
+    `${model.id}에 조사계획 제안을 요청합니다.`,
+    { model: model.id, role: modelRequest.role, plannerKind: "investigation" },
+    deps
+  );
+  const startedAt = Date.now();
+  const response = await model.generate<unknown>(modelRequest);
+  emit(
+    run,
+    "model.proposal",
+    `${response.model}에서 조사계획 제안을 받았습니다.`,
+    {
+      warnings: response.warnings,
+      model: response.model,
+      role: modelRequest.role,
+      plannerKind: "investigation",
+      durationMs: Date.now() - startedAt
+    },
+    deps
+  );
+  return response;
+}
+
 function resolveDefaultAnswerMode(): RuntimeAnswerMode {
   return process.env.WARDEN_ANSWER_MODE === "assisted" ? "assisted" : "deterministic";
 }
 
 function updateRuntimeAnswer(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): void {
-  run.outputs.answer = composeDeterministicAnswer({
-    objective: run.objective,
-    runStatus: run.status,
-    teamResult: latestTeamResult,
-    approvals: run.approvals,
-    modelResponses: run.modelResponses,
-    domainGrounding: run.outputs.domainGrounding,
-    fetchedEvidence: run.outputs.fetchedEvidence
-  });
+  refreshRuntimeDerivedOutputs(run, latestTeamResult);
 }
 
 async function finalizeRuntimeAnswer(
@@ -391,9 +528,12 @@ async function finalizeRuntimeAnswer(
   model: ModelAdapter,
   deps: RuntimeDependencies
 ): Promise<void> {
+  refreshRuntimeDerivedOutputs(run, latestTeamResult);
   const context = buildAnswerContext(run, latestTeamResult);
   if (run.answerMode !== "assisted") {
-    run.outputs.answer = composeDeterministicAnswer(context);
+    const outputs = composeRuntimeAnswerOutputs(context);
+    run.outputs.answer = outputs.answer;
+    run.outputs.securityReport = outputs.securityReport;
     return;
   }
 
@@ -418,6 +558,7 @@ async function finalizeRuntimeAnswer(
       deps
     );
     run.outputs.answer = composeModelAssistedAnswerFromResponse(buildAnswerContext(run, latestTeamResult), response);
+    run.outputs.securityReport = composeSecurityReport(buildAnswerContext(run, latestTeamResult), run.outputs.answer);
   } catch (error) {
     const fallback = composeDeterministicAnswer(context);
     run.outputs.answer = {
@@ -427,7 +568,16 @@ async function finalizeRuntimeAnswer(
         `모델 보조 답변 생성 실패로 deterministic answer를 사용했습니다: ${(error as Error).message}`
       ]
     };
+    run.outputs.securityReport = composeSecurityReport(context, run.outputs.answer);
   }
+}
+
+function composeRuntimeAnswerOutputs(context: AnswerContext): { answer: RuntimeAnswer; securityReport: ReturnType<typeof composeSecurityReport> } {
+  const answer = composeDeterministicAnswer(context);
+  return {
+    answer,
+    securityReport: composeSecurityReport(context, answer)
+  };
 }
 
 function buildAnswerContext(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): AnswerContext {
@@ -438,8 +588,81 @@ function buildAnswerContext(run: RuntimeRun, latestTeamResult: TeamRunResult | u
     approvals: run.approvals,
     modelResponses: run.modelResponses,
     domainGrounding: run.outputs.domainGrounding,
+    domainExpansion: run.outputs.domainExpansion,
+    ragContext: run.outputs.ragContext,
+    claimGraph: run.outputs.claimGraph,
+    evidenceLedger: run.outputs.evidenceLedger,
+    forecast: run.outputs.forecast,
+    investigationPlan: run.outputs.investigationPlan,
     fetchedEvidence: run.outputs.fetchedEvidence
   };
+}
+
+function attachRuntimeAnalysisProducts(
+  run: RuntimeRun,
+  latestTeamResult: TeamRunResult | undefined,
+  deps: RuntimeDependencies
+): void {
+  const previousExpansion = run.outputs.domainExpansion;
+  const previousRag = run.outputs.ragContext;
+  refreshRuntimeAnalysisProducts(run, latestTeamResult);
+
+  if (run.outputs.domainExpansion && run.outputs.domainExpansion !== previousExpansion) {
+    emit(
+      run,
+      "domain.expansion",
+      "도메인 온톨로지로 질문을 확장했습니다.",
+      {
+        scenarioCount: run.outputs.domainExpansion.scenarios.length,
+        actorCount: run.outputs.domainExpansion.actors.length,
+        signalCount: run.outputs.domainExpansion.signals.length,
+        sourceHintCount: run.outputs.domainExpansion.sourceHints.length,
+        warnings: run.outputs.domainExpansion.warnings
+      },
+      deps
+    );
+  }
+
+  if (run.outputs.ragContext && run.outputs.ragContext !== previousRag) {
+    emit(
+      run,
+      "rag.retrieval",
+      "로컬 RAG 근거를 검색했습니다.",
+      {
+        unitCount: run.outputs.ragContext.units.length,
+        warnings: run.outputs.ragContext.warnings
+      },
+      deps
+    );
+  }
+}
+
+function refreshRuntimeDerivedOutputs(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): void {
+  refreshRuntimeAnalysisProducts(run, latestTeamResult);
+  const outputs = composeRuntimeAnswerOutputs(buildAnswerContext(run, latestTeamResult));
+  run.outputs.answer = outputs.answer;
+  run.outputs.securityReport = outputs.securityReport;
+}
+
+function refreshRuntimeAnalysisProducts(run: RuntimeRun, latestTeamResult: TeamRunResult | undefined): void {
+  const products = buildRuntimeAnalysisProducts({
+    objective: run.objective,
+    investigationPlan: run.outputs.investigationPlan,
+    teamResult: latestTeamResult,
+    fetchedEvidence: run.outputs.fetchedEvidence,
+    existing: {
+      domainExpansion: run.outputs.domainExpansion,
+      ragContext: run.outputs.ragContext,
+      claimGraph: run.outputs.claimGraph,
+      evidenceLedger: run.outputs.evidenceLedger,
+      forecast: run.outputs.forecast
+    }
+  });
+  run.outputs.domainExpansion = products.domainExpansion;
+  run.outputs.ragContext = products.ragContext;
+  run.outputs.claimGraph = products.claimGraph;
+  run.outputs.evidenceLedger = products.evidenceLedger;
+  run.outputs.forecast = products.forecast;
 }
 
 function attachDomainGrounding(run: RuntimeRun, deps: RuntimeDependencies): void {
@@ -532,6 +755,28 @@ function buildRuntimePrompt(run: RuntimeRun, iteration: number): string {
     "Do not execute tools directly. Tool execution is handled only by WARDEN policy and MCP router.",
     `Objective: ${run.objective}`,
     `Iteration: ${iteration}/${run.maxIterations}`
+  ].join("\n");
+}
+
+function buildInvestigationPlanPrompt(run: RuntimeRun): string {
+  return [
+    "You are WARDEN's investigation planner for security, geopolitics, supply-chain, and forecast analysis.",
+    "Return JSON only. Do not execute tools.",
+    "Schema:",
+    "{",
+    '  "schemaVersion": "p19.investigation-plan.v1",',
+    '  "objective": string,',
+    '  "title": string,',
+    '  "domain": "security" | "geopolitics" | "supply_chain" | "defense" | "economic_security" | "mixed",',
+    '  "classification": { "scenario": "taiwan_invasion" | "korea_northeast_asia_supply_chain" | "sanctions_export_controls" | "us_alliance_response" | "claim_verification" | "generic_security", "domain": domain, "confidence": number, "matchedSignals": string[] },',
+    '  "hypotheses": [{ "id": string, "label": string, "statement": string, "rationale": string, "priority": "high" | "medium" | "low", "domain": domain, "indicators": string[], "disconfirmingSignals": string[], "disconfirmingIndicators": string[] }],',
+    '  "searchPlan": [{ "id": string, "query": string, "purpose": string, "sourceTypes": string[], "tags": string[] }],',
+    '  "source": "model_proposal",',
+    '  "warnings": string[]',
+    "}",
+    "Use at least 3 competing hypotheses and at least 3 search steps.",
+    "Do not use the legacy fixed hypotheses 제재 우회 비축, 단순 수요 감소, 공급망 교란 unless the user's question specifically requires them.",
+    `Objective: ${run.objective}`
   ].join("\n");
 }
 

@@ -1,4 +1,5 @@
 import type { AchAnalysisResult } from "../agent/types.ts";
+import { formatHypothesisKo } from "./korean-format.ts";
 
 export type SurvivorDelta = {
   added: string[];
@@ -20,8 +21,8 @@ export function calculateSurvivorDelta(
 }
 
 export function renderSurvivorDelta(delta: SurvivorDelta): string {
-  const added = delta.added.length > 0 ? `추가=${delta.added.join(", ")}` : "추가=없음";
-  const removed = delta.removed.length > 0 ? `제거=${delta.removed.join(", ")}` : "제거=없음";
-  const unchanged = delta.unchanged.length > 0 ? `유지=${delta.unchanged.join(", ")}` : "유지=없음";
+  const added = delta.added.length > 0 ? `추가=${delta.added.map(formatHypothesisKo).join(", ")}` : "추가=없음";
+  const removed = delta.removed.length > 0 ? `제거=${delta.removed.map(formatHypothesisKo).join(", ")}` : "제거=없음";
+  const unchanged = delta.unchanged.length > 0 ? `유지=${delta.unchanged.map(formatHypothesisKo).join(", ")}` : "유지=없음";
   return `승인 후 ACH 재평가 변화: ${added}; ${removed}; ${unchanged}.`;
 }

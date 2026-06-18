@@ -99,7 +99,14 @@ function buildKnowledgeUnit(
       sourceId,
       ...parseStringArray(document.tags),
       ...(provenance.tags ?? [])
-    ])
+    ]),
+    metadata: {
+      ...(title ? { title } : {}),
+      ...(summary ? { summary } : {}),
+      ...(parseOptionalString(document.publishedAt) ? { publishedAt: parseOptionalString(document.publishedAt)! } : {}),
+      ...(parseOptionalString(document.publisher) ? { publisher: parseOptionalString(document.publisher)! } : {}),
+      ...(sourceUri ? { canonicalUrl: sourceUri } : {})
+    }
   };
 }
 

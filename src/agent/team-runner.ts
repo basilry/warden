@@ -49,6 +49,9 @@ export async function runTeamWorkflow(userRequest = DEFAULT_REQUEST, options: Ru
   };
 
   const outputs: TeamRunResult["outputs"] = {};
+  if (options.investigationPlan) {
+    outputs.investigationPlan = options.investigationPlan;
+  }
 
   trace.record({
     phase: "run_started",

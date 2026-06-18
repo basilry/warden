@@ -5,7 +5,24 @@ import {
   type ModelRequest,
   type ModelResponse
 } from "../agent/model-adapter.ts";
+import type { ClaimGraph } from "../agent/claim-graph/index.ts";
+import type { EvidenceLedger } from "../agent/evidence-ledger.ts";
 import type { Evidence, KnowledgeUnit, TeamRunResult, VerificationReport } from "../agent/types.ts";
+import type { LocalRagRetrievalResult } from "../connectors/rag/types.ts";
+import type { DomainQueryExpansion } from "../domain/index.ts";
+import type { RuntimeForecastProducts } from "./analysis-products.ts";
+import { formatEvidenceDisplay } from "./evidence-display.ts";
+import type { InvestigationPlan } from "./investigation-plan-schema.ts";
+import {
+  formatConfidenceKo,
+  formatDomainKo,
+  formatHorizonKo,
+  formatHypothesisKo,
+  formatPlanSourceKo,
+  formatRiskKo,
+  formatScenarioKo,
+  translateDisplayKo
+} from "./korean-format.ts";
 import type { RuntimeDomainGrounding, RuntimeRunStatus } from "./types.ts";
 
 export type RuntimeAnswerMode = "deterministic" | "assisted";
@@ -41,6 +58,12 @@ export type AnswerContext = {
   approvals: ApprovalRequest[];
   modelResponses: ModelResponse[];
   domainGrounding?: RuntimeDomainGrounding;
+  domainExpansion?: DomainQueryExpansion;
+  ragContext?: LocalRagRetrievalResult;
+  claimGraph?: ClaimGraph;
+  evidenceLedger?: EvidenceLedger;
+  forecast?: RuntimeForecastProducts;
+  investigationPlan?: InvestigationPlan;
   fetchedEvidence?: KnowledgeUnit[];
 };
 
@@ -61,34 +84,52 @@ export function composeDeterministicAnswer(context: AnswerContext): RuntimeAnswe
             .filter((score) => score.status === "survivor")
             .map(
               (score) =>
-                `${score.hypothesis}: 현재 ACH 생존 가설입니다. support=${score.support}, contradictions=${score.contradictions}.`
+                `${formatHypothesisKo(score.hypothesis)}: 현재 ACH 생존 가설입니다. 지지=${score.support}, 반박=${score.contradictions}.`
             ),
-          ...buildDomainFindings(context.domainGrounding)
+          ...buildInvestigationPlanFindings(context.investigationPlan),
+          ...buildDomainFindings(context.domainGrounding),
+          ...buildDomainExpansionFindings(context.domainExpansion),
+          ...buildForecastFindings(context.forecast),
+          ...buildClaimGraphFindings(context.claimGraph, context.evidenceLedger)
         ]
       : ["아직 검증된 생존 가설이 없습니다. 먼저 분석 팀 실행 결과가 필요합니다."];
 
   const uncertainty = [
     ...((verification?.residualRisk ?? []).length > 0
-      ? verification?.residualRisk ?? []
+      ? (verification?.residualRisk ?? []).map(translateDisplayKo)
       : ["현재 답변은 WARDEN 로컬 분석 결과에 제한됩니다."]),
     ...(sourceReview?.flags.map((flag) => `SourceVet ${flag.severity}: ${flag.summary}`) ?? []),
-    ...(context.domainGrounding?.limits.map((limit) => `도메인 프로파일 한계: ${limit}`) ?? []),
-    ...(context.domainGrounding?.warnings.map((warning) => `도메인 근거 주의: ${warning}`) ?? []),
+    ...(context.domainGrounding?.limits.map((limit) => `도메인 프로파일 한계: ${translateDisplayKo(limit)}`) ?? []),
+    ...(context.domainGrounding?.warnings.map((warning) => `도메인 근거 주의: ${translateDisplayKo(warning)}`) ?? []),
+    ...(context.domainExpansion?.warnings.map((warning) => `온톨로지 확장 주의: ${translateDisplayKo(warning)}`) ?? []),
+    ...(context.ragContext?.warnings.map((warning) => `로컬 RAG 주의: ${translateDisplayKo(warning)}`) ?? []),
+    ...(context.forecast?.warnings.map((warning) => `예측 주의: ${translateDisplayKo(warning)}`) ?? []),
+    ...(context.investigationPlan
+      ? [
+          `분석계획은 ${formatPlanSourceKo(context.investigationPlan.source)}에서 생성되었고 현재 자동 점수화는 초기 규칙입니다.`
+        ]
+      : []),
     ...(pendingApprovals.length > 0 ? ["외부 OSINT 수집은 승인 전이라 답변 근거에 반영되지 않았습니다."] : []),
     ...(fetchedEvidence.length > 0
-      ? ["승인 후 외부 fetch 근거는 현재 deterministic local fixture입니다. 실제 웹 OSINT connector로 교체해야 합니다."]
+      ? ["승인 후 외부 수집 근거는 현재 런타임 재평가에 반영되었습니다. 실제 웹 OSINT connector 품질은 SourceVet 결과와 함께 확인해야 합니다."]
       : [])
   ];
 
   return {
     mode: "deterministic",
     title: context.objective,
-    directAnswer: buildDirectAnswer(context.objective, survivors, pendingApprovals.length, context.domainGrounding),
+    directAnswer: buildDirectAnswer(
+      context.objective,
+      survivors,
+      pendingApprovals.length,
+      context.domainGrounding,
+      context.investigationPlan
+    ),
     keyFindings,
-    evidenceUsed: buildEvidenceUsed(evidence, domainEvidence, fetchedEvidence),
+    evidenceUsed: buildEvidenceUsed(evidence, domainEvidence, fetchedEvidence, context.ragContext?.units ?? []),
     uncertainty: uniqueNonEmpty(uncertainty),
     blockedActions: pendingApprovals.map(
-      (approval) => `${approval.action.name}: ${translateApprovalReasonKo(approval.reason)} (${approval.decision.risk})`
+      (approval) => `${approval.action.name}: ${translateApprovalReasonKo(approval.reason)} (${formatRiskKo(approval.decision.risk)})`
     ),
     nextSteps: buildNextSteps(ach?.rfi, pendingApprovals),
     authorityRefs: buildAuthorityRefs(context),
@@ -120,10 +161,16 @@ export function createAnswerDraftRequest(context: AnswerContext): ModelRequest {
       "Do not claim external OSINT was used if approval is pending.",
       "",
       `Objective: ${context.objective}`,
+      `Investigation domain: ${context.investigationPlan?.domain ?? "unknown"}`,
       `Deterministic direct answer: ${deterministic.directAnswer}`,
       `Key findings: ${deterministic.keyFindings.join(" | ")}`,
       `Uncertainty: ${deterministic.uncertainty.join(" | ")}`,
-      `Blocked actions: ${deterministic.blockedActions.join(" | ") || "none"}`
+      `Blocked actions: ${deterministic.blockedActions.join(" | ") || "none"}`,
+      `Forecast: ${
+        context.forecast
+          ? `${formatPercent(context.forecast.estimate.probability)} ${formatRange(context.forecast.estimate.probabilityRange)}`
+          : "none"
+      }`
     ].join("\n"),
     context: buildAnswerDraftContext(context, deterministic)
   });
@@ -186,7 +233,8 @@ export function validateAnswerAgainstAuthorities(answer: RuntimeAnswer, context:
   ].join("\n");
 
   for (const survivor of survivors) {
-    if (!answer.keyFindings.some((finding) => finding.includes(survivor))) {
+    const translatedSurvivor = formatHypothesisKo(survivor);
+    if (!answer.keyFindings.some((finding) => finding.includes(survivor) || finding.includes(translatedSurvivor))) {
       warnings.push(`authority violation: survivor "${survivor}" missing from keyFindings.`);
     }
   }
@@ -240,7 +288,33 @@ function buildAnswerDraftContext(context: AnswerContext, deterministic: RuntimeA
       blockedActions: deterministic.blockedActions,
       nextSteps: deterministic.nextSteps,
       authorityRefs: deterministic.authorityRefs
-    }
+    },
+    domainExpansion: context.domainExpansion
+      ? {
+          scenarios: context.domainExpansion.scenarios.map((item) => item.id),
+          actors: context.domainExpansion.actors.map((item) => item.id),
+          signals: context.domainExpansion.signals.map((item) => item.id),
+          warnings: context.domainExpansion.warnings
+        }
+      : undefined,
+    ragContext: context.ragContext
+      ? {
+          unitCount: context.ragContext.units.length,
+          warnings: context.ragContext.warnings
+        }
+      : undefined,
+    forecast: context.forecast
+      ? {
+          probability: context.forecast.estimate.probability,
+          probabilityRange: context.forecast.estimate.probabilityRange,
+          confidenceBand: context.forecast.estimate.confidenceBand,
+          scenarios: context.forecast.scenarioSet.scenarios.map((scenario) => ({
+            id: scenario.id,
+            label: scenario.label,
+            probability: scenario.probability
+          }))
+        }
+      : undefined
   };
 }
 
@@ -276,7 +350,8 @@ function buildDirectAnswer(
   objective: string,
   survivors: string[],
   pendingApprovalCount: number,
-  grounding?: RuntimeDomainGrounding
+  grounding?: RuntimeDomainGrounding,
+  investigationPlan?: InvestigationPlan
 ): string {
   if (survivors.length === 0) {
     return [
@@ -285,17 +360,22 @@ function buildDirectAnswer(
     ].join(" ");
   }
 
-  const survivorText = survivors.join(", ");
+  const survivorText = survivors.map(formatHypothesisKo).join(", ");
+  const domainLabel = grounding ? formatDomainKo(grounding.domain) : "";
   const domainText = grounding
-    ? `P10 도메인 근거는 ${formatDomainKo(grounding.domain)}로 분류되었고 confidence=${grounding.confidence.toFixed(2)}입니다.`
+    ? `P10 도메인 근거는 ${domainLabel}${directionParticle(domainLabel)} 분류되었고 신뢰도=${grounding.confidence.toFixed(2)}입니다.`
     : "";
   const approvalText =
     pendingApprovalCount > 0
-      ? "다만 외부 정보 수집은 승인 대기 상태라, 현재 답변은 로컬/fixture 기반 근거에 한정됩니다."
+      ? "다만 외부 정보 수집은 승인 대기 상태라, 현재 답변은 로컬/고정 데이터 기반 근거에 한정됩니다."
       : "현재 승인 대기 중인 외부 수집은 없습니다.";
+  const investigationText = investigationPlan
+    ? `분석계획은 ${formatDomainKo(investigationPlan.domain)} 도메인/${formatScenarioKo(investigationPlan.classification.scenario)} 시나리오로 분류했고, ${investigationPlan.hypotheses.length}개 경쟁 가설과 ${investigationPlan.searchPlan.length}개 검색계획을 잡았습니다.`
+    : "";
 
   return [
     `질문 "${objective}"에 대해 WARDEN의 현재 통제 분석에서는 ${survivorText} 가설이 생존했습니다.`,
+    investigationText,
     domainText,
     "이는 확정 결론이 아니라 ACH, 정책 게이트, 검증자가 허용한 범위의 중간 분석입니다.",
     approvalText
@@ -306,28 +386,47 @@ function buildDirectAnswer(
 
 function buildNextSteps(rfi: string | undefined, pendingApprovals: ApprovalRequest[]): string[] {
   return uniqueNonEmpty([
-    rfi,
+    rfi ? translateDisplayKo(rfi) : undefined,
     ...pendingApprovals.map((approval) => `${approval.action.name} 승인 여부를 결정한 뒤 같은 run을 재개해야 합니다.`),
     "추가 근거가 들어오면 SourceVet과 ACH를 다시 실행해 생존 가설을 재평가합니다."
   ]);
 }
 
+function directionParticle(value: string): "로" | "으로" {
+  const last = [...value].reverse().find((char) => /[가-힣]/.test(char));
+  if (!last) return "로";
+  const code = (last.codePointAt(0) ?? 0) - 0xac00;
+  if (code < 0 || code > 11_171) return "로";
+  const finalConsonant = code % 28;
+  return finalConsonant === 0 || finalConsonant === 8 ? "로" : "으로";
+}
+
 function buildAuthorityRefs(context: AnswerContext): string[] {
   const team = context.teamResult;
   return uniqueNonEmpty([
-    team ? `teamRun=${team.run.id}` : undefined,
-    team?.outputs.ach ? `achCase=${team.outputs.ach.caseId}` : undefined,
-    team?.outputs.verification ? `verification=${team.outputs.verification.status}` : undefined,
-    team ? `traceEvents=${team.trace.length}` : undefined,
-    context.domainGrounding ? `domain=${context.domainGrounding.domain}` : undefined,
-    context.domainGrounding ? `domainEvidence=${context.domainGrounding.evidence.length}` : undefined,
-    context.fetchedEvidence?.length ? `approvedExternalEvidence=${context.fetchedEvidence.length}` : undefined,
-    context.modelResponses.length > 0 ? `modelProposals=${context.modelResponses.length}` : undefined
+    team ? `팀실행=${team.run.id}` : undefined,
+    team?.outputs.ach ? `ACH사례=${team.outputs.ach.caseId}` : undefined,
+    team?.outputs.verification ? `검증=${formatVerificationStatusKo(team.outputs.verification.status)}` : undefined,
+    team ? `추적이벤트=${team.trace.length}` : undefined,
+    context.domainGrounding ? `도메인=${formatDomainKo(context.domainGrounding.domain)}` : undefined,
+    context.domainGrounding ? `도메인근거=${context.domainGrounding.evidence.length}` : undefined,
+    context.domainExpansion ? `온톨로지시나리오=${context.domainExpansion.scenarios.length}` : undefined,
+    context.ragContext ? `RAG근거=${context.ragContext.units.length}` : undefined,
+    context.claimGraph ? `근거그래프=${context.claimGraph.id}` : undefined,
+    context.claimGraph ? `정규주장=${context.claimGraph.canonicalClaimCount}` : undefined,
+    context.evidenceLedger ? `근거원장=${context.evidenceLedger.id}` : undefined,
+    context.forecast ? `예측확률=${formatPercent(context.forecast.estimate.probability)}` : undefined,
+    context.forecast ? `예측범위=${formatRange(context.forecast.estimate.probabilityRange)}` : undefined,
+    context.investigationPlan ? `분석도메인=${formatDomainKo(context.investigationPlan.domain)}` : undefined,
+    context.investigationPlan ? `분석가설=${context.investigationPlan.hypotheses.length}` : undefined,
+    context.investigationPlan ? `검색계획=${context.investigationPlan.searchPlan.length}` : undefined,
+    context.fetchedEvidence?.length ? `승인외부근거=${context.fetchedEvidence.length}` : undefined,
+    context.modelResponses.length > 0 ? `모델제안=${context.modelResponses.length}` : undefined
   ]);
 }
 
 function buildWarnings(context: AnswerContext): string[] {
-  const warnings = context.modelResponses.flatMap((response) => response.warnings);
+  const warnings = context.modelResponses.flatMap((response) => response.warnings.map(translateDisplayKo));
   if (!context.teamResult?.outputs.sourceReview) {
     warnings.push("SourceVet은 현재 런타임 기본 경로에서 생략되었습니다. 외부/문서 근거가 붙으면 다시 켜야 합니다.");
   }
@@ -344,25 +443,49 @@ function buildDomainFindings(grounding: RuntimeDomainGrounding | undefined): str
   ];
 }
 
+function buildInvestigationPlanFindings(plan: InvestigationPlan | undefined): string[] {
+  if (!plan) return [];
+  return [
+    `분석계획: ${formatDomainKo(plan.domain)} 도메인, 시나리오=${formatScenarioKo(plan.classification.scenario)}, 매칭 신호=${plan.classification.matchedSignals.map(translateDisplayKo).join(", ") || "없음"}.`
+  ];
+}
+
+function buildDomainExpansionFindings(expansion: DomainQueryExpansion | undefined): string[] {
+  if (!expansion) return [];
+  const scenarioIds = expansion.scenarios.map((item) => formatScenarioKo(item.id));
+  const actorLabels = expansion.actors.map((item) => translateDisplayKo(item.label)).slice(0, 5);
+  const signalLabels = expansion.signals.map((item) => translateDisplayKo(item.label)).slice(0, 5);
+  return [
+    `도메인 온톨로지: 시나리오=${scenarioIds.join(", ") || "없음"}, 액터=${actorLabels.join(", ") || "없음"}, 신호=${signalLabels.join(", ") || "없음"}.`
+  ];
+}
+
+function buildForecastFindings(forecast: RuntimeForecastProducts | undefined): string[] {
+  if (!forecast) return [];
+  return [
+    `예측: ${formatHorizonKo(forecast.horizon.label, forecast.horizon.months)} 기준 기준확률=${formatPercent(forecast.estimate.probability)}, 범위=${formatRange(forecast.estimate.probabilityRange)}, 신뢰도=${formatConfidenceKo(forecast.estimate.confidenceBand.label)}.`
+  ];
+}
+
+function buildClaimGraphFindings(graph: ClaimGraph | undefined, ledger: EvidenceLedger | undefined): string[] {
+  if (!graph) return [];
+  return [
+    `근거 그래프: 출처 단위=${graph.sourceUnitCount}, 정규화 주장=${graph.canonicalClaimCount}, 반박 관계=${graph.contradictionCount}, 근거 원장 항목=${ledger?.entries.length ?? 0}.`
+  ];
+}
+
 function buildEvidenceUsed(
   achEvidence: Evidence[],
   domainEvidence: RuntimeDomainGrounding["evidence"],
-  fetchedEvidence: KnowledgeUnit[]
+  fetchedEvidence: KnowledgeUnit[],
+  ragEvidence: KnowledgeUnit[]
 ): string[] {
-  const values = uniqueNonEmpty([
-    ...achEvidence.slice(0, 4).map((item) => `${item.text} (${item.source}, reliability=${item.reliability})`),
-    ...domainEvidence
-      .slice(0, 4)
-      .flatMap((unit) =>
-        unit.claims.slice(0, 1).map((claim) => `${claim.text} (${unit.sourceUri}, reliability=${unit.reliability ?? "unknown"})`)
-      ),
-    ...fetchedEvidence
-      .slice(0, 4)
-      .flatMap((unit) =>
-        unit.claims.slice(0, 1).map((claim) => `${claim.text} (${unit.sourceUri}, reliability=${unit.reliability ?? "unknown"})`)
-      )
-  ]);
-  return values.length > 0 ? values : ["아직 답변에 사용할 구조화 evidence가 없습니다."];
+  return formatEvidenceDisplay({
+    achEvidence,
+    domainEvidence,
+    fetchedEvidence,
+    ragEvidence
+  });
 }
 
 function uniqueNonEmpty(values: Array<string | undefined>): string[] {
@@ -384,7 +507,17 @@ function translateApprovalReasonKo(reason: string | undefined): string {
   return reason ?? "승인 사유가 기록되지 않았습니다.";
 }
 
-function formatDomainKo(domain: string): string {
-  if (domain === "defense_supply_chain") return "방산/전략 공급망(defense_supply_chain)";
-  return domain;
+function formatVerificationStatusKo(status: string): string {
+  if (status === "pass") return "통과";
+  if (status === "warn") return "주의";
+  if (status === "fail") return "실패";
+  return translateDisplayKo(status);
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 10_000) / 100}%`;
+}
+
+function formatRange(range: { lower: number; upper: number }): string {
+  return `${formatPercent(range.lower)}-${formatPercent(range.upper)}`;
 }

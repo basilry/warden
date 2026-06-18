@@ -78,7 +78,9 @@ export function loadWardenConfig(
       searchEnabled: parseBoolean(sourceEnv.WARDEN_OSINT_SEARCH_ENABLED, true),
       searchSourcesPath: resolve(cwd, sourceEnv.WARDEN_OSINT_SEARCH_SOURCES ?? "fixtures/osint/search-sources.json"),
       timeoutMs: parsePositiveInteger(sourceEnv.WARDEN_OSINT_TIMEOUT_MS, 8000),
-      maxResults: parseBoundedPositiveInteger(sourceEnv.WARDEN_OSINT_MAX_RESULTS, 5, 1, 25),
+      maxResults: parseBoundedPositiveInteger(sourceEnv.WARDEN_OSINT_MAX_RESULTS, 8, 1, 25),
+      maxQueries: parseBoundedPositiveInteger(sourceEnv.WARDEN_OSINT_MAX_QUERIES, 2, 1, 6),
+      maxSourcesPerQuery: parseBoundedPositiveInteger(sourceEnv.WARDEN_OSINT_MAX_SOURCES_PER_QUERY, 4, 1, 12),
       userAgent: sourceEnv.WARDEN_OSINT_USER_AGENT ?? "WARDEN-Agent/0.1 live-osint-guard"
     }
   };

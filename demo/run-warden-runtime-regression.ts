@@ -27,9 +27,10 @@ try {
   const run = await waitForRun(baseUrl, runId);
 
   assertEqual(run.status, "waiting_approval", "runtime status");
-  assertEqual(run.outputs.teamStatus, "succeeded", "team status");
+  assertEqual(run.outputs.teamStatus, undefined, "team run is deferred until approval");
+  assertAtLeast(run.outputs.investigationPlan?.hypotheses?.length ?? 0, 3, "investigation plan hypotheses");
   assertAtLeast(run.approvals.length, 1, "approval count");
-  assertAtLeast(run.events.filter((event: { type: string }) => event.type === "model.proposal").length, 1, "model proposal events");
+  assertAtLeast(run.events.filter((event: { type: string }) => event.type === "investigation.plan").length, 1, "investigation plan events");
   assertAtLeast(run.events.filter((event: { type: string }) => event.type === "mcp.tool_call").length, 1, "mcp tool call events");
 
   const approvalId = run.approvals[0]?.id;
